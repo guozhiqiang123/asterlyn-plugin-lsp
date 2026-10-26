@@ -68,9 +68,10 @@ resolution is separate; document its minimum runtime and actionable unavailable 
 ## Execution record
 
 - P0: committed before source implementation.
-- P1: standalone package, authority-free descriptor, localization, disposable lifecycle, unreleased
-  development SDK artifact, focused tests/typecheck and deterministic metadata-only package completed
-  in sibling repository; commit pending.
-- P2: pending canonical SDK 1.11.0 artifact, reviewed server assets, license inventory and fixed
-  server layout.
-- P3: pending current host inspector and real host/server session evidence.
+- P1: standalone package, authority-free descriptor, localization, disposable lifecycle, focused
+  tests/typecheck and deterministic metadata-only package completed in commit `eac2a35`.
+- P2: canonical host SDK artifact, pinned `typescript-language-server` 6.0.2 plus TypeScript 5.9.3
+  assets, licenses, fixed layout, recursive integrity manifest and deterministic complete package
+  completed in the current P2 commit.
+- P3: standalone real-server stdio evidence is covered by `test/server.test.mjs`; current native host
+  inspector/session and UI acceptance remain with the host worker.

@@ -4,11 +4,10 @@
 
 | Artifact | Origin | SHA-256 | Status |
 | --- | --- | --- | --- |
-| `vendor/asterlyn-plugin-sdk-1.11.0-dev.tgz` | Host `packages/plugin-sdk` additive SDK source, local development build | `7fb5cbe2074fb9a66cec5dcca2d71d70bc4cad604abac0631e1bb913ae50f55b` | Unreleased; replace before publication |
+| `vendor/asterlyn-plugin-sdk-1.11.0.tgz` | Host template canonical SDK artifact | `7fb5cbe2074fb9a66cec5dcca2d71d70bc4cad604abac0631e1bb913ae50f55b` | Host-provided 1.11.0 artifact |
 
-The artifact is intentionally named `-dev` and is not evidence of an existing published Release.
-The host owner must provide the canonical SDK 1.11.0 tarball and checksum before P2/P3 publication
-or host acceptance. No TypeScript server assets are bundled at P1.
+The artifact and checksum now match the host template exactly. This sibling repository does not
+publish a Release here; host compatibility still must be reviewed before any future publication.
 
 ## Runtime authority
 

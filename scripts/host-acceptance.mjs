@@ -1,0 +1,68 @@
+import { createHash } from "node:crypto";
+import { mkdir, readFile, mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { t, x } from "tar";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const manifest = JSON.parse(await readFile(path.join(root, "manifest.json"), "utf8"));
+const asset = path.join(root, "release", `${manifest.id}-${manifest.version}.asterlyn-plugin.tgz`);
+const host = process.env.ASTERLYN_HOST_CHECKOUT;
+if (!host) throw new Error("Set ASTERLYN_HOST_CHECKOUT to run native inspector/helper acceptance");
+if (!existsSync(asset)) throw new Error("Run npm run package:release first");
+const hostVersion = process.env.ASTERLYN_HOST_VERSION ?? "0.1.20";
+const inspector = process.env.ASTERLYN_PLUGIN_INSPECTOR;
+const inspectorArgs = [asset, manifest.distribution.repository, manifest.version, hostVersion];
+const inspected = inspector
+  ? spawnSync(inspector, inspectorArgs, { cwd: root, encoding: "utf8" })
+  : spawnSync("cargo", ["run", "--quiet", "--locked", "--manifest-path", path.join(host, "Cargo.toml"), "-p", "asterlyn-plugin-package", "--bin", "asterlyn-plugin-inspect", "--", ...inspectorArgs], { cwd: root, encoding: "utf8" });
+if (inspected.status !== 0) throw new Error(`native package inspector rejected the archive:\n${inspected.stderr ?? inspected.stdout}`);
+
+const packageBytes = await readFile(asset);
+const digest = `sha256:${createHash("sha256").update(packageBytes).digest("hex")}`;
+const extractionParent = await mkdtemp(path.join(os.tmpdir(), "asterlyn-lsp-acceptance-"));
+const pluginRoot = path.join(extractionParent, "plugin");
+await mkdir(pluginRoot, { recursive: true });
+await x({ file: asset, cwd: pluginRoot });
+const helperPath = process.env.ASTERLYN_PLUGIN_HOST ?? path.join(host, "target/debug/asterlyn-plugin-host");
+if (!process.env.ASTERLYN_PLUGIN_HOST || !existsSync(helperPath)) {
+  const built = spawnSync("cargo", ["build", "--locked", "--manifest-path", path.join(host, "Cargo.toml"), "-p", "asterlyn-plugin-host", "--bin", "asterlyn-plugin-host"], { cwd: root, encoding: "utf8", stdio: "inherit" });
+  if (built.status !== 0) throw new Error("could not build the native plugin-host helper");
+}
+const child = spawn(helperPath, ["--plugin-root", pluginRoot, "--plugin-id", manifest.id, "--plugin-version", manifest.version, "--package-digest", digest, "--runtime-entry", manifest.distribution.runtime.entry], { stdio: ["pipe", "pipe", "pipe"] });
+child.stderr.on("data", (chunk) => process.stderr.write(chunk));
+const input = child.stdin;
+const output = child.stdout;
+let buffered = Buffer.alloc(0);
+const readFrame = async () => {
+  while (buffered.length < 4 || buffered.length < buffered.readUInt32BE(0) + 4) {
+    const [chunk] = await onceData(output);
+    buffered = Buffer.concat([buffered, chunk]);
+  }
+  const size = buffered.readUInt32BE(0) + 4;
+  const result = JSON.parse(buffered.subarray(4, size).toString("utf8"));
+  buffered = buffered.subarray(size);
+  return result;
+};
+const onceData = (stream) => new Promise((resolve, reject) => { const onData = (data) => { stream.off("error", onError); resolve([data]); }; const onError = (error) => { stream.off("data", onData); reject(error); }; stream.once("data", onData); stream.once("error", onError); });
+const sendFrame = (message) => { const bytes = Buffer.from(JSON.stringify(message)); const header = Buffer.alloc(4); header.writeUInt32BE(bytes.length); input.write(Buffer.concat([header, bytes])); };
+const first = await readFrame();
+if (first.message?.type !== "hello") throw new Error(`native helper did not handshake: ${JSON.stringify(first)}`);
+sendFrame({ protocol: 1, sequence: 1, message: { type: "helloAck", data: { sessionId: "lsp-acceptance", capabilities: [], permissions: ["host.language-services.execute"] } } });
+sendFrame({ protocol: 1, sequence: 2, message: { type: "activate", data: { sessionId: "lsp-acceptance", workspaceId: "workspace-lsp-acceptance", workspaceGeneration: 1, workspaceRoot: "/workspace/lsp", evidence: {}, locale: "en-US", theme: "dark" } } });
+const ready = await readFrame();
+if (ready.message?.type !== "activationReady") throw new Error(`native helper activation failed: ${JSON.stringify(ready)}`);
+const contribution = ready.message.data.contributions?.[0];
+if (contribution?.kind !== "languageService" || contribution.payload?.id !== "typescript-javascript" || contribution.payload?.serverId !== "typescript") throw new Error(`unexpected language contribution: ${JSON.stringify(contribution)}`);
+sendFrame({ protocol: 1, sequence: 3, message: { type: "shutdown", data: { reason: "windowClosed" } } });
+const started = Date.now();
+await new Promise((resolve, reject) => { child.once("exit", (code, signal) => code === 0 ? resolve() : reject(new Error(`helper shutdown code=${code} signal=${signal}`))); setTimeout(() => reject(new Error("helper cleanup timed out")), 5000); });
+const summary = JSON.parse(await readFile(path.join(root, "release/release-summary.json"), "utf8"));
+const resources = [];
+await t({ file: asset, onentry: (entry) => { if (entry.type === "File") resources.push({ path: entry.path, bytes: entry.size }); } });
+resources.sort((a, b) => b.bytes - a.bytes);
+console.log(JSON.stringify({ hostVersion, pluginId: manifest.id, packageBytes: packageBytes.byteLength, uncompressedBytes: resources.reduce((sum, resource) => sum + resource.bytes, 0), integrityEntries: Object.keys(summary.files).length, largestResource: resources[0] ?? null, helperShutdownMs: Date.now() - started, packageSha256: summary.sha256, nativeInspector: true, isolatedActivation: true }, null, 2));
+await rm(extractionParent, { recursive: true, force: true });

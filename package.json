@@ -13,6 +13,7 @@
     "test": "node --test test/*.test.mjs",
     "package:release": "node scripts/build-release-package.mjs",
     "package:inspect": "node scripts/inspect-release-package.mjs",
+    "acceptance": "node scripts/host-acceptance.mjs",
     "verify": "npm run check && npm test && npm run package:release && npm run package:inspect"
   },
   "dependencies": {

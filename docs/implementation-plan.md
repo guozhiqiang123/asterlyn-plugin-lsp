@@ -73,5 +73,6 @@ resolution is separate; document its minimum runtime and actionable unavailable 
 - P2: canonical host SDK artifact, pinned `typescript-language-server` 6.0.2 plus TypeScript 5.9.3
   assets, licenses, fixed layout, recursive integrity manifest and deterministic complete package
   completed in the current P2 commit.
-- P3: standalone real-server stdio evidence is covered by `test/server.test.mjs`; current native host
-  inspector/session and UI acceptance remain with the host worker.
+- P3: standalone real-server stdio plus native inspector and isolated production-helper activation
+  evidence completed in the current P3 commit; see `docs/p3-acceptance.md`. Native host UI/session
+  review remains with the host worker.

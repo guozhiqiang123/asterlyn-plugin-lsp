@@ -90,3 +90,7 @@ See [android-support-plan.md](android-support-plan.md) for the proposed Kotlin/J
 Gradle DSL stages. Candidate Android import, mixed-language behavior, JDKs and standalone
 server distribution must be verified before changing SDK/manifest/resources. The current plugin
 0.2.0 remains TS/JS/Rust; this follow-up is documentation only.
+
+## Android JP0 执行（2026-10-26）
+
+用户已授权实施；见 [独立后端探针结果](android-feasibility.md)。当前候选的 Android 实际语义/独立发行闸门未通过，不新增 JVM descriptor。宿主先补通用传输基础；插件仍提供已验收的 TS/JS/Rust。

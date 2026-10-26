@@ -1,10 +1,10 @@
 # Android / JVM provider 计划
 
-- 日期：2026-10-26；状态：**仅规划，尚未实施**。
+- 日期：2026-10-26；状态：**实施已授权；JP0 已执行探针，Android 上线闸门未通过**。
 - 基线：插件 `2237b3d` / 0.2.0，SDK 1.12.0；已支持 TS/JS 和工作区内 Rust。
 - 宿主主计划：[Android / JVM 语言服务兼容计划](../../asterlyn/docs/engineering/2026-10-26-android-language-services-plan.md)。
   两个仓库按同级目录组织；正式边界仍由宿主 ADR-0034 与后续冻结契约定义。
-- 保留 `dev.asterlyn.lsp` 和当前仓库；本次不改 manifest、source、SDK/vendor、锁文件、服务器资源或版本，不打包/安装/发布。
+- 保留 `dev.asterlyn.lsp` 和当前仓库；JP0 结果见 [可行性执行记录](android-feasibility.md)。Java/Kotlin 真实语义闸门未通过，当前不注册 JVM descriptor，不改 SDK/vendor、版本或服务器资源，不打包/安装/发布。
 
 ## 1. 分工与选型
 
@@ -52,4 +52,4 @@ Kotlin 官方 Alpha/实验性 Android 支持、部分闭源及独立包条款需
 
 优先验收 boostCleaner（大型 Java/Kotlin 混合）和 FilesRecovery（Kotlin 为主），再回归 dbloodSugar_vestbag、独立 worktree 和 Kotlin DSL 最小夹具。功能路径、资源预算、阶段日志与包回滚遵从宿主主计划；XML/Manifest/资源语义另设阶段，不能只靠通用 XML server 标记支持。
 
-本次仅完成计划与宿主边界对齐。没有安装/运行 JVM language server，没有执行目标项目 Gradle，没有新增 Android 运行能力；当前发布形态仍是插件 0.2.0 的 TS/JS/Rust。后续 JP0 首先记录真实选型探针，不把计划项写成已完成。
+原规划回合仅完成计划与宿主边界对齐。随后用户授权实施，宿主提交 `c32d058` 已记录独立 server / Android Gradle 探针与失败证据，详见 [JP0 执行记录](android-feasibility.md)。当前发布形态仍是插件 0.2.0 的 TS/JS/Rust；JP1–JP5 不把未通过的 JVM 后端注册为可用。

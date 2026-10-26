@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 3,
+  "sdkMajor": 1,
+  "id": "dev.asterlyn.lsp",
+  "version": "0.1.0",
+  "nameKey": "name",
+  "descriptionKey": "description",
+  "localization": {
+    "defaultLocale": "en-US",
+    "locales": {
+      "en-US": {
+        "name": "TypeScript and JavaScript language services",
+        "description": "Diagnostics, hover, definition and basic completion for TypeScript and JavaScript files."
+      },
+      "zh-CN": {
+        "name": "TypeScript 和 JavaScript 语言服务",
+        "description": "为 TypeScript 和 JavaScript 文件提供诊断、悬停、定义和基础补全。"
+      }
+    }
+  },
+  "settings": [],
+  "capabilities": ["languageServices"],
+  "permissions": ["host.language-services.execute"],
+  "distribution": {
+    "repository": "guozhiqiang123/asterlyn-plugin-lsp",
+    "runtime": { "protocol": 1, "entry": "runtime/plugin.js" },
+    "hostCompatibility": { "minimum": "0.1.13", "maximumExclusive": "0.2.0" },
+    "license": { "expression": "MIT", "file": "LICENSE" },
+    "integrity": {}
+  }
+}

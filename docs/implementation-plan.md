@@ -68,4 +68,9 @@ resolution is separate; document its minimum runtime and actionable unavailable 
 ## Execution record
 
 - P0: committed before source implementation.
-- P1–P3: pending.
+- P1: standalone package, authority-free descriptor, localization, disposable lifecycle, unreleased
+  development SDK artifact, focused tests/typecheck and deterministic metadata-only package completed
+  in sibling repository; commit pending.
+- P2: pending canonical SDK 1.11.0 artifact, reviewed server assets, license inventory and fixed
+  server layout.
+- P3: pending current host inspector and real host/server session evidence.

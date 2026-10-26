@@ -1,0 +1,5 @@
+{
+  "serverId": "rust-analyzer",
+  "toolchain": "1.98.1",
+  "policy": "cargo-offline-no-build-v1"
+}

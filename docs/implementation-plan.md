@@ -77,3 +77,9 @@ resolution is separate; document its minimum runtime and actionable unavailable 
   evidence completed in commit `970f047`; measured cold-start, feature latency, process-group RSS
   and cleanup evidence is in `docs/acceptance-2026-10-26.md`. Native host UI/session review remains
   with the host worker.
+
+## Rust follow-up
+
+The additive SDK 1.12.0 / host 0.1.21 / plugin 0.2.0 milestone now adds a separate fixed Rust
+profile. See `rust-support-plan.md` for RP1/RP2 evidence and explicit R3/R4 limits; the initial
+TS-only contract above remains historical. No public SDK/plugin Release is published by this work.

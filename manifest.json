@@ -2,19 +2,19 @@
   "schemaVersion": 3,
   "sdkMajor": 1,
   "id": "dev.asterlyn.lsp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "nameKey": "name",
   "descriptionKey": "description",
   "localization": {
     "defaultLocale": "en-US",
     "locales": {
       "en-US": {
-        "name": "TypeScript and JavaScript language services",
-        "description": "Diagnostics, hover, definition and basic completion for TypeScript and JavaScript files."
+        "name": "TypeScript, JavaScript and Rust language services",
+        "description": "Diagnostics, hover, definition and basic completion for TypeScript, JavaScript and Rust files."
       },
       "zh-CN": {
-        "name": "TypeScript 和 JavaScript 语言服务",
-        "description": "为 TypeScript 和 JavaScript 文件提供诊断、悬停、定义和基础补全。"
+        "name": "TypeScript、JavaScript 和 Rust 语言服务",
+        "description": "为 TypeScript、JavaScript 和 Rust 文件提供诊断、悬停、定义和基础补全。"
       }
     }
   },
@@ -24,7 +24,7 @@
   "distribution": {
     "repository": "guozhiqiang123/asterlyn-plugin-lsp",
     "runtime": { "protocol": 1, "entry": "runtime/plugin.js" },
-    "hostCompatibility": { "minimum": "0.1.13", "maximumExclusive": "0.2.0" },
+    "hostCompatibility": { "minimum": "0.1.21", "maximumExclusive": "0.2.0" },
     "license": { "expression": "MIT", "file": "LICENSE" },
     "integrity": {}
   }

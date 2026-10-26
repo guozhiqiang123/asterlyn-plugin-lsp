@@ -1,11 +1,11 @@
 # Rust provider 计划
 
-- 日期：2026-10-26；状态：**仅规划，未实现**。
+- 日期：2026-10-26；状态：**RP1/RP2 完成；RP3 工作区链路已通过，宿主覆盖安装验收进行中**。
 - 插件仓库基线：`bbaacf9`，当前版本 0.1.0。
 - 继续使用 `dev.asterlyn.lsp` 与当前仓库，不新建 Rust 插件仓库。
 - 主计划在同级宿主仓库：`asterlyn/docs/engineering/2026-10-26-rust-language-services-plan.md`。
-  宿主 ADR-0034 仍只接受 TypeScript profile；Rust 需在 R0 冻结增量契约后才能实现。
-- 本次不改 manifest、runtime、SDK/vendor、锁文件、服务器资源、版本号或打包产物；不发布远端。
+  R0 已冻结 SDK 1.12.0 / host 0.1.21 / plugin 0.2.0，固定 Rustup 1.98.1 和 cargo-offline-no-build-v1。
+- 本阶段实施双 provider 与完整校验包；不发布远端。
 
 ## 1. 插件与宿主分工
 
@@ -68,4 +68,18 @@ argv、env 或初始化配置。工具缺失由宿主提示，运行时不下载
 - [rust-analyzer 初始化配置](https://rust-analyzer.github.io/book/configuration.html)
 - [Cargo 配置层级](https://doc.rust-lang.org/cargo/reference/config.html)
 
-选定实际组件版本后仍需验证行为，不能仅凭上游主分支文档标记完成。宿主/插件当前均未启用 Rust。
+选定实际组件版本后仍需验证行为，不能仅凭上游主分支文档标记完成。此句为最初规划时的状态；本次已启用 Rust 工作区链路，记录见下。
+
+## 6. RP1/RP2 执行记录
+
+- SDK 1.12.0 来自宿主提交 `0543766`，精确 tgz/双校验/lock 一致；属于未发布开发制品。
+- 插件 0.2.0 提供两个独立 descriptor；最低宿主 0.1.21，保留 TypeScript 旧包兼容边界。
+- 只增加 `servers/rust-analyzer/profile.json`，固定 Rustup 1.98.1 + cargo-offline-no-build-v1；
+  插件没有新增 Node/fs/process/网络权力，也没有随包携带 RA 二进制。
+- `npm run verify`：类型检查和 4 个测试、重复打包、完整完整性检查通过。
+- 原生 inspector / isolated helper 通过，两个 descriptor 均完成真实投影；新宿主拒绝旧 host version 安装新包。
+- 包 4,579,680 B，解压资源 24,577,252 B，134 integrity 项；SHA-256
+  `e98c56cecfb930b0d6327dcaf6180579eb039838b12b2acfc924f69363559915`。
+- 宿主已通过真实本项目跨 crate navigation/hover/completion/references/未保存诊断与双浏览器 Ctrl-click；
+  最终 native 安装证据在宿主 `docs/benchmarks/2026-10-26-rust-language-services.md`。
+- 外部标准库/依赖导航和构建脚本/宏增强仍未完成；不把首次工作区验证记成全部 Rust 支持。

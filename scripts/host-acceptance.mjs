@@ -13,7 +13,7 @@ const asset = path.join(root, "release", `${manifest.id}-${manifest.version}.ast
 const host = process.env.ASTERLYN_HOST_CHECKOUT;
 if (!host) throw new Error("Set ASTERLYN_HOST_CHECKOUT to run native inspector/helper acceptance");
 if (!existsSync(asset)) throw new Error("Run npm run package:release first");
-const hostVersion = process.env.ASTERLYN_HOST_VERSION ?? "0.1.20";
+const hostVersion = process.env.ASTERLYN_HOST_VERSION ?? "0.1.21";
 const inspector = process.env.ASTERLYN_PLUGIN_INSPECTOR;
 const inspectorArgs = [asset, manifest.distribution.repository, manifest.version, hostVersion];
 const inspected = inspector
@@ -57,6 +57,8 @@ const ready = await readFrame();
 if (ready.message?.type !== "activationReady") throw new Error(`native helper activation failed: ${JSON.stringify(ready)}`);
 const contribution = ready.message.data.contributions?.[0];
 if (contribution?.kind !== "languageService" || contribution.payload?.id !== "typescript-javascript" || contribution.payload?.serverId !== "typescript") throw new Error(`unexpected language contribution: ${JSON.stringify(contribution)}`);
+const rust = ready.message.data.contributions?.[1];
+if (ready.message.data.contributions.length !== 2 || rust?.kind !== "languageService" || rust.payload?.serverId !== "rust-analyzer" || rust.payload?.extensions?.[0] !== ".rs") throw new Error("Rust descriptor projection failed");
 sendFrame({ protocol: 1, sequence: 3, message: { type: "shutdown", data: { reason: "windowClosed" } } });
 const started = Date.now();
 await new Promise((resolve, reject) => { child.once("exit", (code, signal) => code === 0 ? resolve() : reject(new Error(`helper shutdown code=${code} signal=${signal}`))); setTimeout(() => reject(new Error("helper cleanup timed out")), 5000); });

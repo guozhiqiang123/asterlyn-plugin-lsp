@@ -7,6 +7,7 @@ import type {
 } from "@asterlyn/plugin-sdk";
 
 export const LSP_PLUGIN_ID = "dev.asterlyn.lsp";
+export const RUST_LANGUAGE_SERVICE_ID = "rust";
 export const TYPESCRIPT_LANGUAGE_SERVICE_ID = "typescript-javascript";
 
 const languageService: SdkLanguageServiceContribution = Object.freeze({
@@ -19,23 +20,29 @@ const languageService: SdkLanguageServiceContribution = Object.freeze({
   rootMarkers: Object.freeze(["tsconfig.json", "jsconfig.json", "package.json"]),
 });
 
+const rustService: SdkLanguageServiceContribution = Object.freeze({
+  kind: "language-service", id: RUST_LANGUAGE_SERVICE_ID, label: "Rust",
+  serverId: "rust-analyzer", languageIds: Object.freeze(["rust"]),
+  extensions: Object.freeze([".rs"]), rootMarkers: Object.freeze(["Cargo.toml"]),
+});
+
 export const LSP_PLUGIN_MANIFEST: SdkInstallablePluginPackageManifest = Object.freeze({
   schemaVersion: 3,
   sdkMajor: 1,
   id: LSP_PLUGIN_ID,
-  version: "0.1.0",
+  version: "0.2.0",
   nameKey: "name",
   descriptionKey: "description",
   localization: Object.freeze({
     defaultLocale: "en-US",
     locales: Object.freeze({
       "en-US": Object.freeze({
-        name: "TypeScript and JavaScript language services",
-        description: "Diagnostics, hover, definition and basic completion for TypeScript and JavaScript files.",
+        name: "TypeScript, JavaScript and Rust language services",
+        description: "Diagnostics, hover, definition and basic completion for TypeScript, JavaScript and Rust files.",
       }),
       "zh-CN": Object.freeze({
-        name: "TypeScript 和 JavaScript 语言服务",
-        description: "为 TypeScript 和 JavaScript 文件提供诊断、悬停、定义和基础补全。",
+        name: "TypeScript、JavaScript 和 Rust 语言服务",
+        description: "为 TypeScript、JavaScript 和 Rust 文件提供诊断、悬停、定义和基础补全。",
       }),
     }),
   }),
@@ -45,13 +52,13 @@ export const LSP_PLUGIN_MANIFEST: SdkInstallablePluginPackageManifest = Object.f
   distribution: Object.freeze({
     repository: "guozhiqiang123/asterlyn-plugin-lsp",
     runtime: Object.freeze({ protocol: 1, entry: "runtime/plugin.js" }),
-    hostCompatibility: Object.freeze({ minimum: "0.1.13", maximumExclusive: "0.2.0" }),
+    hostCompatibility: Object.freeze({ minimum: "0.1.21", maximumExclusive: "0.2.0" }),
     license: Object.freeze({ expression: "MIT", file: "LICENSE" }),
     integrity: Object.freeze({}),
   }),
 });
 
-/** Empty evidence is intentionally eligible so the first opened TS/JS file can activate the service. */
+/** Empty evidence is intentionally eligible so the first opened supported file can activate the service. */
 export function matchesLanguageWorkspace(_context: SdkPluginMatchContext): boolean {
   return true;
 }
@@ -63,8 +70,8 @@ export const LSP_PLUGIN: SdkPluginModule = Object.freeze({
   manifest: LSP_PLUGIN_MANIFEST,
   matches: matchesLanguageWorkspace,
   activate: ({ contribute }: SdkPluginActivationContext) => {
-    const contribution = contribute(languageService);
-    return Object.freeze({ dispose: () => contribution.dispose() });
+    const contributions = [contribute(languageService), contribute(rustService)];
+    return Object.freeze({ dispose: () => contributions.forEach((item) => item.dispose()) });
   },
 });
 

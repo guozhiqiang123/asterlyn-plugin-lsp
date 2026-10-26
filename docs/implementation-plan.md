@@ -83,3 +83,10 @@ resolution is separate; document its minimum runtime and actionable unavailable 
 The additive SDK 1.12.0 / host 0.1.21 / plugin 0.2.0 milestone now adds a separate fixed Rust
 profile. See `rust-support-plan.md` for RP1/RP2 evidence and explicit R3/R4 limits; the initial
 TS-only contract above remains historical. No public SDK/plugin Release is published by this work.
+
+## Planned Android / JVM follow-up
+
+See [android-support-plan.md](android-support-plan.md) for the proposed Kotlin/Java/Groovy and
+Gradle DSL stages. Candidate Android import, mixed-language behavior, JDKs and standalone
+server distribution must be verified before changing SDK/manifest/resources. The current plugin
+0.2.0 remains TS/JS/Rust; this follow-up is documentation only.

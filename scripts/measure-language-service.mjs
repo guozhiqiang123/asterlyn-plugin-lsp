@@ -91,7 +91,15 @@ async function measureSession(languageId, fileName, text, positions) {
     request(1, "initialize", {
       processId: null, rootUri: `file://${fixtureRoot}`,
       capabilities: { textDocument: { publishDiagnostics: {}, hover: { contentFormat: ["plaintext"] }, definition: {}, completion: {} } },
-      initializationOptions: { tsserver: { path: tsserverPath } },
+      initializationOptions: {
+        tsserver: {
+          path: tsserverPath,
+          useSyntaxServer: "never",
+          plugins: [],
+          disableAutomaticTypingAcquisition: true,
+          maxTsServerMemory: 512,
+        },
+      },
     });
     await waitFor((message) => message.id === 1);
     const initializeMs = performance.now() - started;

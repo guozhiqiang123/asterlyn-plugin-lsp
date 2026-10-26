@@ -38,13 +38,15 @@ script. Installing or enabling the descriptor does not itself start a server.
 
 `measure-language-service.mjs` starts the packaged `servers/typescript/server.mjs --stdio` in a
 detached, per-run process group and supplies the packaged TypeScript `tsserver.js` path. It uses
+the current host profile: `useSyntaxServer: "never"`, `plugins: []`, automatic typing acquisition
+disabled, and `maxTsServerMemory: 512`. It uses
 temporary unsaved CRLF documents containing a non-ASCII identifier and verifies a diagnostic,
 hover, definition and completion response before EOF cleanup.
 
 | Document | Initialize | Diagnostics | Hover | Definition | Completion | Group RSS sample | Cleanup |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| TypeScript | 65.80 ms | 1 | 10.93 ms | 10.93 ms | 32.16 ms / 1,002 items | 547,584 KiB | 90.14 ms |
-| JavaScript | 76.04 ms | 0 | 11.02 ms | 10.30 ms | 43.24 ms / 1,027 items | 556,368 KiB | 316.15 ms |
+| TypeScript | 66.16 ms | 1 | 10.81 ms | 11.42 ms | 43.46 ms / 1,002 items | 362,944 KiB | 96.12 ms |
+| JavaScript | 75.93 ms | 0 | 10.50 ms | 11.41 ms | 43.29 ms / 1,027 items | 380,528 KiB | 381.89 ms |
 
 All process-group PIDs were absent after bounded cleanup. The JavaScript run required the script's
 owned process-group termination fallback; this is recorded as `cleanupForced: true`, with no

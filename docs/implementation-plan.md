@@ -1,6 +1,6 @@
 # Independent LSP plugin implementation plan
 
-- Date: 2026-10-26. Status: planned; source implementation follows this initial committed plan.
+- Date: 2026-10-26. Status: P0–P3 implementation and package acceptance complete; host UI review remains.
 - User selected TypeScript/JavaScript as the first language family.
 - Host repository: `/Users/gzq/PrivateProjects/asterlyn`.
 - Contract authority: host `docs/architecture/decisions/0034-plugin-language-services.md`.
@@ -24,10 +24,10 @@ before implementation.
 
 | Stage | Deliverable | Acceptance |
 | --- | --- | --- |
-| P0 | This plan, repository boundary and frozen contract | Commit before runtime implementation |
-| P1 | Standalone package, SDK artifact, TS/JS matching, language contribution, localization, disposal | Contract/identity/matching/negative tests and type check; commit metadata/runtime separately |
-| P2 | Pin official published TypeScript language server and TypeScript, record licenses/integrity, build fixed server assets and deterministic schema-3 archive | Repeated package bytes identical; complete integrity/license validation; no runtime sibling imports; commit packaging |
-| P3 | Inspect with current native host inspector, activate through isolated helper, exercise real server diagnostic/hover/definition/completion from unsaved source | Host/plugin integration evidence, missing-tool/error/stale/cancel/disposal checks; commit evidence/corrections |
+| P0 | This plan, repository boundary and frozen contract | Complete in `a425d43` |
+| P1 | Standalone package, SDK artifact, TS/JS matching, language contribution, localization, disposal | Complete in `eac2a35`; contract/identity/matching/negative tests and type check pass |
+| P2 | Pin official published TypeScript language server and TypeScript, record licenses/integrity, build fixed server assets and deterministic schema-3 archive | Complete in `c08c6ff`; repeated package bytes and complete integrity/license validation pass |
+| P3 | Inspect with current native host inspector, activate through isolated helper, exercise real server diagnostic/hover/definition/completion from unsaved source | Complete in `970f047` plus measured evidence in `docs/acceptance-2026-10-26.md`; host UI/session review remains |
 
 ## Matching and presentation
 
@@ -72,7 +72,8 @@ resolution is separate; document its minimum runtime and actionable unavailable 
   tests/typecheck and deterministic metadata-only package completed in commit `eac2a35`.
 - P2: canonical host SDK artifact, pinned `typescript-language-server` 6.0.2 plus TypeScript 5.9.3
   assets, licenses, fixed layout, recursive integrity manifest and deterministic complete package
-  completed in the current P2 commit.
+  completed in commit `c08c6ff`.
 - P3: standalone real-server stdio plus native inspector and isolated production-helper activation
-  evidence completed in the current P3 commit; see `docs/p3-acceptance.md`. Native host UI/session
-  review remains with the host worker.
+  evidence completed in commit `970f047`; measured cold-start, feature latency, process-group RSS
+  and cleanup evidence is in `docs/acceptance-2026-10-26.md`. Native host UI/session review remains
+  with the host worker.

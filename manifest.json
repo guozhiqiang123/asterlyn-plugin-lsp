@@ -2,26 +2,27 @@
   "schemaVersion": 3,
   "sdkMajor": 1,
   "id": "dev.asterlyn.lsp",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "nameKey": "name",
   "descriptionKey": "description",
   "localization": {
     "defaultLocale": "en-US",
     "locales": {
       "en-US": {
-        "name": "TypeScript, JavaScript and Rust language services",
-        "description": "Diagnostics, hover, definition and basic completion for TypeScript, JavaScript and Rust files."
+        "name": "Language services",
+        "description": "TypeScript, JavaScript, Rust and Android Java/Kotlin language services."
       },
       "zh-CN": {
-        "name": "TypeScript、JavaScript 和 Rust 语言服务",
-        "description": "为 TypeScript、JavaScript 和 Rust 文件提供诊断、悬停、定义和基础补全。"
+        "name": "语言服务",
+        "description": "TypeScript、JavaScript、Rust 和 Android Java/Kotlin 语言服务。"
       }
     }
   },
   "settings": [],
   "capabilities": [
     "languageServices",
-    "pluginDependencies"
+    "pluginDependencies",
+    "packagedLanguageServices"
   ],
   "permissions": [
     "host.language-services.execute"
@@ -33,7 +34,7 @@
       "entry": "runtime/plugin.js"
     },
     "hostCompatibility": {
-      "minimum": "0.1.21",
+      "minimum": "0.1.22",
       "maximumExclusive": "0.2.0"
     },
     "license": {
@@ -45,8 +46,69 @@
   "dependencies": [
     {
       "id": "dev.asterlyn.android-gradle",
-      "minimum": "0.5.10",
+      "minimum": "0.6.0",
       "maximumExclusive": "1.0.0"
+    }
+  ],
+  "languageServers": [
+    {
+      "id": "android-jvm",
+      "program": {
+        "entry": "server-programs/android-server.mjs",
+        "tools": [
+          {
+            "id": "serverJava",
+            "kind": "java",
+            "minimumMajor": 25,
+            "maximumMajorExclusive": 26
+          },
+          {
+            "id": "kotlinJava",
+            "kind": "java",
+            "minimumMajor": 17,
+            "maximumMajorExclusive": 25
+          }
+        ],
+        "components": [
+          {
+            "id": "jdtls",
+            "version": "1.62.0",
+            "archiveDigest": "sha256:f587dafd8410633c2c2bf005e853a2bbb03cddee88933d49bfe6d9cb1cf09342",
+            "contentDigest": "sha256:ca0c9c9f4797c8273bc39f8d786f63fa87a6ef2b4ac4d4577fc49646761e4126"
+          },
+          {
+            "id": "kotlin-language-server",
+            "version": "1.3.13",
+            "archiveDigest": "sha256:4fe7d71d087b307c7869036171bd9d8c6a4284cd7c25b89098b0a24eb2d9b6d2",
+            "contentDigest": "sha256:511aee8b85ef906747190bbe39ec10a94975b5d5b41b82b499a8558162e4d941"
+          },
+          {
+            "id": "kotlin-compiler-bridge",
+            "version": "2.2.0",
+            "archiveDigest": "sha256:58a12d60fcd67503d0617d18b4d45f882c3d078f4e132053b66acd0d91f77077",
+            "contentDigest": "sha256:ea42e99bb94b232f5d08f1753349c31ac4df1d88cdbf5e58f11a2e4b61285ba7"
+          }
+        ]
+      },
+      "selectors": [
+        {
+          "languageId": "java",
+          "extensions": [
+            ".java"
+          ]
+        },
+        {
+          "languageId": "kotlin",
+          "extensions": [
+            ".kt"
+          ]
+        }
+      ],
+      "model": {
+        "pluginId": "dev.asterlyn.android-gradle",
+        "serviceId": "android-gradle-model",
+        "schema": 1
+      }
     }
   ]
 }

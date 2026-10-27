@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugin>
+  <extension point="org.eclipse.jdt.ls.core.delegateCommandHandler">
+    <delegateCommandHandler class="dev.asterlyn.lsp.WorkingCopyDiagnostics">
+      <command id="asterlyn.java.documentDiagnostics" static="true"/>
+      <command id="asterlyn.java.declarationKey" static="true"/>
+      <command id="asterlyn.java.refreshModel" static="true"/>
+    </delegateCommandHandler>
+  </extension>
+</plugin>

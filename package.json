@@ -1,6 +1,6 @@
 {
   "name": "asterlyn-plugin-lsp",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -17,7 +17,7 @@
     "verify": "npm run check && npm test && npm run package:release && npm run package:inspect"
   },
   "dependencies": {
-    "@asterlyn/plugin-sdk": "file:vendor/asterlyn-plugin-sdk-1.13.0.tgz"
+    "@asterlyn/plugin-sdk": "file:vendor/asterlyn-plugin-sdk-1.14.0.tgz"
   },
   "devDependencies": {
     "@types/node": "22.20.2",

@@ -29,6 +29,8 @@ async function copyTree(source, destination) {
 }
 await copyTree(path.join(root, "servers"), path.join(staging, "servers"));
 
+await copyTree(path.join(root,"server-programs"),path.join(staging,"server-programs"));
+
 const integrity = {};
 async function collectFiles(directory, prefix = "") {
   const files = [];
@@ -39,7 +41,7 @@ async function collectFiles(directory, prefix = "") {
   }
   return files;
 }
-for (const relative of ["LICENSE", "runtime/plugin.js", ...await collectFiles(path.join(staging, "servers"), "servers")]) {
+for (const relative of ["LICENSE", "runtime/plugin.js", ...await collectFiles(path.join(staging, "servers"), "servers"), ...await collectFiles(path.join(staging,"server-programs"),"server-programs")]) {
   integrity[relative] = `sha256:${createHash("sha256").update(await readFile(path.join(staging, relative))).digest("hex")}`;
 }
 const admittedManifest = structuredClone(manifest);
@@ -47,7 +49,7 @@ admittedManifest.distribution.integrity = integrity;
 await writeFile(path.join(staging, "manifest.json"), `${JSON.stringify(admittedManifest, null, 2)}\n`);
 const assetName = `${manifest.id}-${manifest.version}.asterlyn-plugin.tgz`;
 const assetPath = path.join(releaseRoot, assetName);
-await createTar({ cwd: staging, file: assetPath, gzip: true, portable: true, noMtime: true }, ["manifest.json", "LICENSE", "runtime/plugin.js", "servers"]);
+await createTar({ cwd: staging, file: assetPath, gzip: true, portable: true, noMtime: true }, ["manifest.json", "LICENSE", "runtime/plugin.js", "servers", "server-programs"]);
 const asset = await readFile(assetPath);
 await writeFile(path.join(releaseRoot, "release-summary.json"), `${JSON.stringify({ asset: assetName, version: manifest.version, bytes: asset.byteLength, sha256: createHash("sha256").update(asset).digest("hex"), files: integrity }, null, 2)}\n`);
 await rm(staging, { recursive: true, force: true });

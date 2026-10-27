@@ -1,3 +1,4 @@
+import {ANDROID_PROFILE,isAndroidWorkspace} from "./android-profile.ts";
 import type {
   SdkInstallablePluginPackageManifest,
   SdkLanguageServiceContribution,
@@ -30,30 +31,31 @@ export const LSP_PLUGIN_MANIFEST: SdkInstallablePluginPackageManifest = Object.f
   schemaVersion: 3,
   sdkMajor: 1,
   id: LSP_PLUGIN_ID,
-  version: "0.2.1",
+  version: "0.3.0",
   nameKey: "name",
   descriptionKey: "description",
   localization: Object.freeze({
     defaultLocale: "en-US",
     locales: Object.freeze({
       "en-US": Object.freeze({
-        name: "TypeScript, JavaScript and Rust language services",
-        description: "Diagnostics, hover, definition and basic completion for TypeScript, JavaScript and Rust files.",
+        name: "Language services",
+        description: "TypeScript, JavaScript, Rust and Android Java/Kotlin language services.",
       }),
       "zh-CN": Object.freeze({
-        name: "TypeScript、JavaScript 和 Rust 语言服务",
-        description: "为 TypeScript、JavaScript 和 Rust 文件提供诊断、悬停、定义和基础补全。",
+        name: "语言服务",
+        description: "TypeScript、JavaScript、Rust 和 Android Java/Kotlin 语言服务。",
       }),
     }),
   }),
   settings: Object.freeze([]),
-  capabilities: Object.freeze(["languageServices", "pluginDependencies"]),
-  dependencies: Object.freeze([Object.freeze({ id: "dev.asterlyn.android-gradle", minimum: "0.5.10", maximumExclusive: "1.0.0" })]),
+  capabilities: Object.freeze(["languageServices", "pluginDependencies", "packagedLanguageServices"]),
+  dependencies: Object.freeze([Object.freeze({ id: "dev.asterlyn.android-gradle", minimum: "0.6.0", maximumExclusive: "1.0.0" })]),
   permissions: Object.freeze(["host.language-services.execute"]),
+  languageServers: Object.freeze([ANDROID_PROFILE]),
   distribution: Object.freeze({
     repository: "guozhiqiang123/asterlyn-plugin-lsp",
     runtime: Object.freeze({ protocol: 1, entry: "runtime/plugin.js" }),
-    hostCompatibility: Object.freeze({ minimum: "0.1.21", maximumExclusive: "0.2.0" }),
+    hostCompatibility: Object.freeze({ minimum: "0.1.22", maximumExclusive: "0.2.0" }),
     license: Object.freeze({ expression: "MIT", file: "LICENSE" }),
     integrity: Object.freeze({}),
   }),
@@ -70,8 +72,10 @@ export const LSP_PLUGIN: SdkPluginModule = Object.freeze({
   version: LSP_PLUGIN_MANIFEST.version,
   manifest: LSP_PLUGIN_MANIFEST,
   matches: matchesLanguageWorkspace,
-  activate: ({ contribute }: SdkPluginActivationContext) => {
+  activate: (context: SdkPluginActivationContext) => {
+    const {contribute}=context;
     const contributions = [contribute(languageService), contribute(rustService)];
+    if(isAndroidWorkspace(context))contributions.push(contribute({kind:"language-service",id:"android-jvm",label:"Android Java / Kotlin",serverId:ANDROID_PROFILE.id,languageIds:["java","kotlin"],extensions:[".java",".kt"],rootMarkers:["settings.gradle","settings.gradle.kts","build.gradle","build.gradle.kts"]}));
     return Object.freeze({ dispose: () => contributions.forEach((item) => item.dispose()) });
   },
 });

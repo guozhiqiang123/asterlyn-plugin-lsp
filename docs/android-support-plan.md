@@ -8,7 +8,9 @@
 
 ## 1. 分工与选型
 
-宿主拥有 Java 可执行文件/工具链发现、执行 trust、语言进程、Gradle 导入工作、模型/变体、缓存、只读来源、编辑和全部 UI。插件只声明经宿主验收的语言 profile / 可用能力和完整性覆盖的资源。Android/Gradle 插件继续拥有 Run/Tasks/Devices 和 Android 选择语义；两个插件通过宿主定义的只读上下文协作，不直接互调或借 task callback 跑语言服务。
+2026-10-27 职责修订：宿主只拥有通用进程/工具准入、权限、异步工作、模型引用与文档/编辑器边界；Android Gradle 插件拥有 Gradle/AGP 模型提取、模块/变体/source sets/编译依赖与模型失效规则；LSP 插件拥有服务器和后端模型适配。模型通过宿主协调的版本化服务传递，不直接互调或共享私有缓存路径。
+
+用户明确要求：`dev.asterlyn.lsp` 整体启用期间 `dev.asterlyn.android-gradle` 不可关闭/卸载，适用于 TS/JS/Rust；关闭 LSP 后解除其依赖锁。启用依赖不会直接运行 Gradle、启动 LSP 或授予执行权限。宿主先交付通用强依赖校验，随后本包声明真实依赖；缺失或不兼容依赖不能被略过。
 
 候选由宿主 A0 核验：Java 优先 Eclipse JDT LS，Kotlin 优先调查官方 Kotlin LSP，普通 Groovy 调查 GroovyLanguageServer，Gradle Groovy DSL 调查 Microsoft Gradle 服务器。它们尚未被选择为产品依赖。具体发行、摘要、许可证/分发条件、运行 JDK、传输和 Android 模型支持均需通过探针。
 
@@ -53,3 +55,7 @@ Kotlin 官方 Alpha/实验性 Android 支持、部分闭源及独立包条款需
 优先验收 boostCleaner（大型 Java/Kotlin 混合）和 FilesRecovery（Kotlin 为主），再回归 dbloodSugar_vestbag、独立 worktree 和 Kotlin DSL 最小夹具。功能路径、资源预算、阶段日志与包回滚遵从宿主主计划；XML/Manifest/资源语义另设阶段，不能只靠通用 XML server 标记支持。
 
 原规划回合仅完成计划与宿主边界对齐。随后用户授权实施，宿主提交 `c32d058` 已记录独立 server / Android Gradle 探针与失败证据，详见 [JP0 执行记录](android-feasibility.md)。当前发布形态仍是插件 0.2.0 的 TS/JS/Rust；JP1–JP5 不把未通过的 JVM 后端注册为可用。
+
+## 2026-10-27 协作实施
+
+以宿主 [插件构建模型计划](../../asterlyn/docs/engineering/2026-10-27-plugin-build-model-cooperation-plan.md)（文档提交 `6b7df57`）和 ADR-0035 为准。C1 先交付可见依赖锁及原生门禁，C2 模型通道，C3 Android 提取，C4 本插件消费。未验证的 Kotlin/JVM profile 不提前注册。

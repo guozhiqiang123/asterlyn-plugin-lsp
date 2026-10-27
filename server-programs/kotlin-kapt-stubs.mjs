@@ -10,7 +10,7 @@ const MAX_FILES = 20000, MAX_FILE_BYTES = 2 * 1024 * 1024, MAX_BYTES = 128 * 102
 const asPath = (value) => value instanceof URL ? fileURLToPath(value) : typeof value === "string" && value.startsWith("file:") ? fileURLToPath(value) : resolve(String(value));
 const uri = (value) => pathToFileURL(resolve(value)).href;
 const inside = (root, value) => value === root || value.startsWith(`${root}${sep}`);
-const reader = new URL("./kapt-metadata-reader.java", import.meta.url);
+const readerJar = new URL("./kapt-metadata-reader.jar", import.meta.url);
 
 async function sourceFiles(root, result = []) {
   for (const entry of await readdir(root, { withFileTypes: true })) {
@@ -92,17 +92,21 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
     const cp = [asPath(compilerJar), asPath(kaptJar), ...runtime].join(delimiter);
     const javaExecutable = asPath(java).endsWith(`${sep}java`) ? asPath(java) : join(asPath(java), "bin", "java");
     const compileClasspath = classpath.length ? classpath.join(delimiter) : runtime.join(delimiter);
-    const args = ["-cp", cp, "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler", "-Xuse-k2-kapt", `-Xplugin=${asPath(kaptJar)}`,
+    const compilerArgs = ["-Xuse-k2-kapt", `-Xplugin=${asPath(kaptJar)}`,
       "-P", "plugin:org.jetbrains.kotlin.kapt3:aptMode=stubs", "-P", `plugin:org.jetbrains.kotlin.kapt3:stubs=${stubsRoot}`,
       "-P", `plugin:org.jetbrains.kotlin.kapt3:classes=${classesRoot}`, "-P", `plugin:org.jetbrains.kotlin.kapt3:sources=${generatedRoot}`,
       "-P", "plugin:org.jetbrains.kotlin.kapt3:correctErrorTypes=true", "-P", `plugin:org.jetbrains.kotlin.kapt3:apclasspath=${asPath(kaptJar)}`,
       "-classpath", compileClasspath, "-d", classesRoot, ...javaRoots.map((rootPath) => `-Xjava-source-roots=${rootPath}`), ...inputs];
+    const quoteArg = (value) => /[\s"\\]/.test(value) ? `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"` : value;
+    const argFile = join(moduleRoot, "compiler.args");
+    await writeFile(argFile, `${compilerArgs.map(quoteArg).join("\n")}\n`, "utf8");
+    const args = ["-cp", cp, "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler", `@${argFile}`];
     await exec(javaExecutable, args, { maxBuffer: 32 * 1024 * 1024, timeout: timeoutMs, killSignal: "SIGKILL", signal });
     const metadata = await allFiles(stubsRoot).then((files) => files.filter((file) => file.endsWith(".kapt_metadata")));
-    for (const file of metadata) {
-      const parsed = JSON.parse((await exec(javaExecutable, [reader.pathname, file])).stdout);
-      originMaps.set(file, parsed);
-    }
+    const manifest = join(moduleRoot, "metadata-manifest.txt");
+    await writeFile(manifest, `${metadata.join("\n")}\n`, "utf8");
+    const batch = JSON.parse((await exec(javaExecutable, ["-Xmx128m", "-jar", readerJar.pathname, manifest], { maxBuffer: 32 * 1024 * 1024, timeout: timeoutMs, killSignal: "SIGKILL", signal })).stdout);
+    for (const file of metadata) if (batch.files[file]) originMaps.set(file, batch.files[file]);
     const ownMetadata = metadata.filter((file) => {
       const parsed = originMaps.get(file);
       return Object.values(parsed.lines ?? {}).some((entry) => sourceOwners.get(entry.path) === module.module);

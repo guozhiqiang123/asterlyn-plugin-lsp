@@ -1,0 +1,88 @@
+diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinTextDocumentService.kt b/server/src/main/kotlin/org/javacs/kt/KotlinTextDocumentService.kt
+index 2ec1e52..2c7c76e 100644
+--- a/server/src/main/kotlin/org/javacs/kt/KotlinTextDocumentService.kt
++++ b/server/src/main/kotlin/org/javacs/kt/KotlinTextDocumentService.kt
+@@ -302,31 +302,41 @@ class KotlinTextDocumentService(
+     private fun doLint(cancelCallback: () -> Boolean) {
+         LOG.info("Linting {}", describeURIs(lintTodo))
+         val files = clearLint()
++        // Keep the exact text/version observed before compilation. A later edit must never receive
++        // diagnostics produced for this older compiler snapshot.
++        val snapshots = files.mapNotNull { uri -> sf.snapshot(uri)?.let { uri to it } }.toMap()
+         val context = sp.compileFiles(files)
+         if (!cancelCallback.invoke()) {
+-            reportDiagnostics(files, context.diagnostics)
++            reportDiagnostics(files, context.diagnostics, snapshots)
+         }
+         lintCount++
+     }
+ 
+-    private fun reportDiagnostics(compiled: Collection<URI>, kotlinDiagnostics: Diagnostics) {
++    private fun reportDiagnostics(compiled: Collection<URI>, kotlinDiagnostics: Diagnostics, snapshots: Map<URI, SourceSnapshot>) {
+         val langServerDiagnostics = kotlinDiagnostics
+             .flatMap(::convertDiagnostic)
+             .filter { config.diagnostics.enabled && it.second.severity <= config.diagnostics.level }
+         val byFile = langServerDiagnostics.groupBy({ it.first }, { it.second })
+ 
+         for ((uri, diagnostics) in byFile) {
++            val expected = snapshots[uri]
++            val current = sf.snapshot(uri)
+-            if (sf.isOpen(uri)) {
+-                client.publishDiagnostics(PublishDiagnosticsParams(uri.toString(), diagnostics))
++            if (sf.isOpen(uri) && expected != null && current == expected) {
++                client.publishDiagnostics(PublishDiagnosticsParams(uri.toString(), diagnostics).apply {
++                    version = expected.version
++                })
+ 
+                 LOG.info("Reported {} diagnostics in {}", diagnostics.size, describeURI(uri))
+             }
+-            else LOG.info("Ignore {} diagnostics in {} because it's not open", diagnostics.size, describeURI(uri))
++            else LOG.info("Ignore {} diagnostics in {} because its source snapshot is stale or closed", diagnostics.size, describeURI(uri))
+         }
+ 
+-        val noErrors = compiled - byFile.keys
++        val noErrors = compiled.filter { uri ->
++            val expected = snapshots[uri]
++            expected != null && sf.snapshot(uri) == expected && uri !in byFile.keys
++        }
+         for (file in noErrors) {
+-            clearDiagnostics(file)
++            clearDiagnostics(file, snapshots[file]?.version)
+ 
+             LOG.info("No diagnostics in {}", file)
+         }
+@@ -334,8 +344,10 @@ class KotlinTextDocumentService(
+         lintCount++
+     }
+ 
+-    private fun clearDiagnostics(uri: URI) {
+-        client.publishDiagnostics(PublishDiagnosticsParams(uri.toString(), listOf()))
++    private fun clearDiagnostics(uri: URI, version: Int? = sf.snapshot(uri)?.version) {
++        client.publishDiagnostics(PublishDiagnosticsParams(uri.toString(), listOf()).apply {
++            this.version = version
++        })
+     }
+ 
+     private fun shutdownExecutors(awaitTermination: Boolean) {
+diff --git a/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt b/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt
+index d7bb849..3477769 100644
+--- a/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt
++++ b/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt
+@@ -23,6 +23,9 @@ import java.nio.file.Paths
+ 
+ private class SourceVersion(val content: String, val version: Int, val language: Language?, val isTemporary: Boolean)
+ 
++/** Immutable text/version pair used to reject diagnostics computed for an older overlay. */
++data class SourceSnapshot(val content: String, val version: Int)
++
+ /**
+  * Notify SourcePath whenever a file changes
+  */
+@@ -195,6 +198,8 @@ class SourceFiles(
+ 
+     fun isOpen(uri: URI): Boolean = (uri in open)
+ 
++    fun snapshot(uri: URI): SourceSnapshot? = files[uri]?.let { SourceSnapshot(it.content, it.version) }
++
+     fun isIncluded(uri: URI): Boolean = exclusions.isURIIncluded(uri)
+ }

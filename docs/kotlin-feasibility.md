@@ -29,13 +29,22 @@ The real mixed source fixture produced:
 - Initialize completed in 1.0 seconds; the full probe completed in 18.5 seconds; stderr was 210
   bytes and contained no source or credential dump.
 
-## Release gate
+## Versioned diagnostics development patch
 
-This candidate is not yet a product Android profile. Its diagnostics notifications omit the LSP
-document version (`version: null`), and the server does not advertise `textDocument/diagnostic`.
-Assigning the current overlay version on receipt would be unsafe because an older asynchronous
-reconcile could arrive after a newer edit. The adapter must either obtain a versioned/pull
-diagnostics extension or explicitly expose Kotlin diagnostics as unavailable.
+The original 1.3.13 notifications omit the LSP document version (`version: null`), and the server
+does not advertise `textDocument/diagnostic`. A small source patch now captures the exact open
+document text/version before compilation, compares both values before publication, sets
+`PublishDiagnosticsParams.version`, and drops a result whose snapshot is stale. The patch and
+build receipt are recorded under `server-programs/kotlin-diagnostics/`; it is based on fwcd commit
+`6d9e61b79d4631e75516def7ab7ff0d8b9310467`.
+
+The patched development JAR was exercised against the same Android model. After an invalid version
+2 edit was immediately superseded by a valid version 3 edit, the final diagnostics snapshot was
+`version: 3, count: 0`; the stale invalid result was not published. Evidence is retained in
+`/tmp/asterlyn-android-lsp/kotlin-proof/summary.json` and `patched-run2.log`.
+
+The component is still development-only until its source build is reproducible with locked
+dependencies and its complete license/integrity receipt is admitted by the host.
 
 The probe also found that opening a Java document inside the Kotlin source workspace triggers the
 1.3.13 server's script-compilation path and fails with `Unable to find script compilation

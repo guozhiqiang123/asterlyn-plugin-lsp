@@ -11,8 +11,8 @@ carry the same version. An edit that arrives while compilation is running theref
 older result to be discarded instead of being relabelled as current.
 
 The patched development JAR was built from the bundled Kotlin compiler 2.1.0 and the server's
-published libraries. Its SHA-256 is
-`cf2d33701e24a6f5f000e7ed6f713e2ee1b51663434efd7b0bf567651fff0d87` and its size is 477,673 bytes.
+published libraries. Its reproducible SHA-256 is
+`080db08585bb91a144c92b7f57b52064e1ce7f0482efa82b086308147f3f2d6f` and its size is 477,673 bytes.
 The reproducible source change is in `diagnostics-version.patch`. The normal Gradle build could not
 be used in the probe environment because Maven Central returned HTTP 403 for the Kotlin Gradle
 plugin; compilation was performed directly with the exact compiler JAR already present in the
@@ -22,3 +22,11 @@ receipt before packaging.
 The component remains development-only until its source build and license receipt are frozen in the
 plugin package. It does not add Java document handling to Kotlin; the host adapter must route Java
 documents to the Java service and provide Java sources through the private shadow classpath.
+
+## Offline build
+
+`build.mjs` requires a clean checkout at the pinned commit, an already verified fwcd distribution
+root, and a JDK. It archives the local checkout, applies `diagnostics-version.patch`, and invokes
+the Kotlin compiler JARs from that distribution's `server/lib` directory. It never invokes Gradle,
+resolves Maven coordinates, downloads files, or reads project credentials. The output is based on
+the untouched `server-1.3.13.jar` and receives deterministic timestamps for patched classes.

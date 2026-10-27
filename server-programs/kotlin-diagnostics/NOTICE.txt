@@ -1,0 +1,8 @@
+Kotlin Language Server (fwcd) is Copyright (c) the Kotlin Language Server contributors.
+
+The upstream server is distributed under the Apache License, Version 2.0. The upstream source and
+license report are pinned by the component receipt. This directory contains only a small source
+patch authored for Asterlyn; it does not copy Android Studio or IntelliJ source.
+
+Upstream source: https://github.com/fwcd/kotlin-language-server
+Pinned source commit: 6d9e61b79d4631e75516def7ab7ff0d8b9310467

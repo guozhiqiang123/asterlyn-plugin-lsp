@@ -28,6 +28,7 @@ SUPPORTED = {
             "reflect": ("kotlin-reflect-1.6.10.jar", "org.jetbrains.kotlin:kotlin-reflect:1.6.10", "3277ac102ae17aad10a55abec75ff5696c8d109790396434b496e75087854203"),
             "daemon": ("kotlin-daemon-embeddable-2.3.21.jar", "org.jetbrains.kotlin:kotlin-daemon-embeddable:2.3.21", "222fc10a3c22e74d30369bf8a0ca6c4f9372eac7d4a0081e290c256fa4d30fb2"),
             "coroutines": ("kotlinx-coroutines-core-jvm-1.8.0.jar", "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.8.0", "9860906a1937490bf5f3b06d2f0e10ef451e65b95b269f22daf68a3d1f5065c5"),
+            "annotations": ("annotations-23.0.0.jar", "org.jetbrains:annotations:23.0.0", "7b0f19724082cbfcbc66e5abea2b9bc92cf08a1ea11e191933ed43801eb3cd05"),
         },
     },
 }

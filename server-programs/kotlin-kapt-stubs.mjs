@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const exec = promisify(execFile);
 const sourceExt = new Set([".kt", ".kts", ".java"]);
+const MAX_FILES = 20000, MAX_FILE_BYTES = 2 * 1024 * 1024, MAX_BYTES = 128 * 1024 * 1024;
 const asPath = (value) => value instanceof URL ? fileURLToPath(value) : typeof value === "string" && value.startsWith("file:") ? fileURLToPath(value) : resolve(String(value));
 const uri = (value) => pathToFileURL(resolve(value)).href;
 const inside = (root, value) => value === root || value.startsWith(`${root}${sep}`);
@@ -42,6 +43,7 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
   const perModuleRoots = [];
   const originMaps = new Map();
   const originPaths = new Map();
+  let sourceCount = 0, sourceBytes = 0;
   const modulesByName = new Map(model.modules.map((item) => [item.module, item]));
   const dependencyClosure = (module, seen = new Set()) => {
     if (!module || seen.has(module.module)) return [];
@@ -72,6 +74,10 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
         const target = join(privateSourceRoot, relative(sourceRoot, source));
         await mkdir(join(target, ".."), { recursive: true });
         const text = overlayMap.get(uri(source))?.text ?? await readFile(source, "utf8");
+        sourceCount++;
+        const bytes = Buffer.byteLength(text);
+        if (sourceCount > MAX_FILES || bytes > MAX_FILE_BYTES || sourceBytes + bytes > MAX_BYTES) throw new Error("kapt-source-size-bound");
+        sourceBytes += bytes;
         await writeFile(target, text);
         originPaths.set(target, source);
         sourceOwners.set(target, sourceModule.module);
@@ -112,9 +118,11 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
     if (!parsed) return null;
     const entry = parsed.lines?.[descriptor];
     if (!entry) return null;
-    const sourcePath = originPaths.get(entry.path) ?? entry.path;
+    if (!originPaths.has(entry.path)) return null;
+    const sourcePath = originPaths.get(entry.path);
     const text = await readFile(entry.path, "utf8");
-    const bounded = Math.max(0, Math.min(entry.line, text.length));
+    if (!Number.isInteger(entry.line) || entry.line < 0 || entry.line > text.length) return null;
+    const bounded = entry.line;
     const before = text.slice(0, bounded);
     const position = { line: (before.match(/\n/g) ?? []).length, character: before.slice(before.lastIndexOf("\n") + 1).length };
     return { uri: uri(sourcePath), range: { start: position, end: position } };

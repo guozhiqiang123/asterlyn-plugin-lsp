@@ -2,13 +2,16 @@ import { cp, mkdir, readFile, readdir, stat, writeFile, lstat, realpath, rm } fr
 import { spawn } from "node:child_process";
 import { delimiter, dirname, extname, join, resolve, sep, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createHash } from "node:crypto";
 import { RpcPeer } from "./rpc.mjs";
+import { createOwnedSourceReader } from "./kotlin-dependency-source.mjs";
 
 const MAX_SOURCE_FILES = 20000;
 const MAX_SOURCE_BYTES = 128 * 1024 * 1024;
 const MAX_SOURCE_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_DIRECTORY_ENTRIES = 100000;
 const SOURCE_EXTENSIONS = new Set([".kt", ".kts", ".java"]);
+const SERVER_JAR = "asterlyn-kotlin-server.jar";
 
 const asPath = (value) => value instanceof URL ? fileURLToPath(value) : resolve(String(value));
 const isInside = (root, value) => value === root || value.startsWith(`${root}${sep}`);
@@ -59,7 +62,7 @@ async function componentLayout(component) {
   for (const root of candidates) {
     const lib = join(root, "lib");
     try {
-      await stat(join(lib, "server-1.3.13.jar"));
+      await stat(join(lib, SERVER_JAR));
       return { root, lib };
     } catch {}
   }
@@ -102,6 +105,10 @@ export async function startKotlin({ model, stateDirectory, java, component, over
   const generation = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const shadowRoot = join(state, `kotlin-source-view-${generation}`);
   const configRoot = join(state, "kotlin-config");
+  const temporaryRoot = join(state, `kotlin-temporary-${generation}`);
+  await mkdir(temporaryRoot, {recursive: true});
+  const privateTemporaryRoot = await realpath(temporaryRoot);
+  const readDependencySource = await createOwnedSourceReader(privateTemporaryRoot);
   await mkdir(shadowRoot, { recursive: true });
   const mappings = { originalToPrivate: new Map(), privateToOriginal: new Map(), fileStats: new Map() };
   const sourceViews = [];
@@ -139,21 +146,18 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     await writeFile(target, text);
   }
   const jars = (await readdir(layout.lib)).filter((name) => name.endsWith(".jar")).map((name) => join(layout.lib, name));
-  const serverJar = join(layout.lib, "server-1.3.13.jar");
+  const serverJar = join(layout.lib, SERVER_JAR);
   const runtimeClasspath = [serverJar, ...jars.filter((jar) => jar !== serverJar)].join(delimiter);
-  const patchJar = component?.patchJar ? resolve(asPath(component.patchJar)) : null;
-  const effectiveClasspath = patchJar ? [patchJar, ...jars.filter((jar) => jar !== serverJar)].join(delimiter) : runtimeClasspath;
   const javaPath = asPath(java);
-  configuration.onStart?.({ javaPath, runtimeClasspath: effectiveClasspath.split(delimiter).length, lib: layout.lib, patchJar });
+  configuration.onStart?.({ javaPath, runtimeClasspath: jars.length, lib: layout.lib });
   const env = { HOME: process.env.HOME ?? state, TMPDIR: process.env.TMPDIR ?? "/tmp", PATH: `${dirname(javaPath)}:/usr/bin:/bin`, JAVA_HOME: resolve(dirname(dirname(javaPath))), XDG_CONFIG_HOME: configRoot };
   // Keep the semantic server from exhausting its worker threads on large Android
   // models.  ExitOnOutOfMemoryError is intentional: a half-alive JVM cannot
   // answer LSP requests reliably and must be reclaimed by the owning session.
-  const child = spawn(javaPath, ["-Xmx2048m", "-XX:+ExitOnOutOfMemoryError", "-cp", effectiveClasspath, "org.javacs.kt.MainKt"], { cwd: shadowRoot, env, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(javaPath, ["-Xmx2048m", "-XX:+ExitOnOutOfMemoryError", `-Djava.io.tmpdir=${privateTemporaryRoot}`, "-cp", runtimeClasspath, "org.javacs.kt.MainKt"], { cwd: shadowRoot, env, stdio: ["pipe", "pipe", "pipe"] });
   child.stderr.on("data", (chunk) => configuration.onStderr?.(String(chunk).slice(0, 4096)));
   const upstream = new RpcPeer(child.stdout, child.stdin);
   const map = mapUriFactory(mappings, shadowRoot);
-  const diagnostics = new Map();
   let contextEpoch = 0;
   const mapNotification = (message) => {
     if (message?.method !== "textDocument/publishDiagnostics" || !message.params) return map.output(message.params);
@@ -162,7 +166,6 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     const state = privatePath && openKotlin.get(privatePath);
     if (!state || message.params.version !== state.privateVersion) return null;
     const params = map.output({ ...message.params, version: state.hostVersion });
-    diagnostics.set(privatePath, { privateVersion: state.privateVersion, hostVersion: state.hostVersion, contextEpoch: state.contextEpoch, params });
     return params;
   };
   const peer = {
@@ -192,14 +195,17 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     });
   };
   const openKotlin = new Map();
+  const privateVersions = new Map();
+  const nextVersion = path => {const version = (privateVersions.get(path) ?? 0) + 1; privateVersions.set(path, version); return version;};
   const overlayState = new Map();
   // fwcd only treats Kotlin files as source roots. A Java shadow-file change
   // therefore needs a cheap Kotlin recompile kick so references observe the
   // new Java ABI without exposing Java documents to KLS.
-  const kickKotlinRefresh = () => {
+  const kickKotlinRefresh = (except) => {
     contextEpoch++;
     for (const [privatePath, current] of openKotlin) {
-      const version = current.privateVersion + 1;
+      if (privatePath === except) continue;
+      const version = nextVersion(privatePath);
       upstream.notify("textDocument/didChange", {
         textDocument: { uri: uriFor(privatePath), version },
         contentChanges: [{ text: current.text }],
@@ -242,7 +248,10 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     const prior = openKotlin.get(privatePath);
     const hostVersion = Number(overlay.version ?? prior?.hostVersion ?? 0);
     if (prior?.text === text && prior.hostVersion === hostVersion) return;
-    const privateVersion = (prior?.privateVersion ?? 0) + 1;
+    // Another Kotlin buffer can change this document's semantic diagnostics without changing
+    // its own text. Invalidate outstanding reports while keeping compilation lazy.
+    if (!unchanged) kickKotlinRefresh(privatePath);
+    const privateVersion = nextVersion(privatePath);
     if (prior) upstream.notify("textDocument/didChange", { textDocument: { uri: uriFor(privatePath), version: privateVersion }, contentChanges: [{ text }] });
     else upstream.notify("textDocument/didOpen", { textDocument: { uri: uriFor(privatePath), languageId: "kotlin", version: privateVersion, text } });
     openKotlin.set(privatePath, { privateVersion, hostVersion, contextEpoch, text });
@@ -252,17 +261,21 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     const originalPath = privatePath && (mappings.privateToOriginal.get(privatePath) ?? mappings.privateToOriginal.get(privatePath.toLowerCase()));
     if (!privatePath || !originalPath) throw new Error("kotlin-overlay-source-missing");
     const text = await readFile(originalPath, "utf8");
-    await writeFile(privatePath, text);
+    const changed = await readFile(privatePath, "utf8") !== text;
+    if (changed) await writeFile(privatePath, text);
     overlayState.delete(privatePath);
     if (extname(privatePath) === ".java") {
-      upstream.notify("workspace/didChangeWatchedFiles", { changes: [{ uri: uriFor(privatePath), type: 2 }] });
-      kickKotlinRefresh();
+      if (changed) {
+        upstream.notify("workspace/didChangeWatchedFiles", { changes: [{ uri: uriFor(privatePath), type: 2 }] });
+        kickKotlinRefresh();
+      }
     }
     else if (openKotlin.has(privatePath)) {
-      const current = openKotlin.get(privatePath);
-      const privateVersion = current.privateVersion + 1;
-      upstream.notify("textDocument/didChange", { textDocument: { uri: uriFor(privatePath), version: privateVersion }, contentChanges: [{ text }] });
-      openKotlin.set(privatePath, { ...current, privateVersion, text });
+      // didClose restores the shadow file's disk text and releases open-file lint ownership.
+      // Retain monotonic private versions across reopen so late reports cannot match a new owner.
+      upstream.notify("textDocument/didClose", { textDocument: { uri: uriFor(privatePath) } });
+      openKotlin.delete(privatePath);
+      if (changed) kickKotlinRefresh();
     }
   };
   const refreshSources = async () => {
@@ -294,11 +307,14 @@ export async function startKotlin({ model, stateDirectory, java, component, over
   peer.on("notification", message => {
     if (message.method === "textDocument/publishDiagnostics") configuration.onDiagnostics?.(message.params);
   });
-  const currentDiagnostics = original => {
-    const path = uriPath(original) ?? resolve(original);
-    const privatePath = mappings.originalToPrivate.get(path) ?? mappings.originalToPrivate.get(path.toLowerCase());
-    const state = openKotlin.get(privatePath), report = diagnostics.get(privatePath);
-    return state && report && state.privateVersion === report.privateVersion && state.hostVersion === report.hostVersion && state.contextEpoch === report.contextEpoch ? report.params : null;
+  const documentDiagnostics = async original => {
+    const privatePath = await mappedPrivatePath(original), current = openKotlin.get(privatePath);
+    if (!current) throw Error("kotlin-document-not-open");
+    const epoch = contextEpoch, digest = `sha256:${createHash("sha256").update(current.text).digest("hex")}`;
+    const result = await upstream.request("kotlin/asterlynDocumentDiagnostics", {uri: uriFor(privatePath), version: current.privateVersion, digest});
+    const latest = openKotlin.get(privatePath);
+    if (latest !== current || contextEpoch !== epoch || result?.version !== current.privateVersion || result?.digest !== digest || !Array.isArray(result.items)) throw Error("stale-diagnostics");
+    return {uri: uriFor(mappings.privateToOriginal.get(privatePath)), version: current.hostVersion, diagnostics: map.output(result.items)};
   };
   const rootUri = uriFor(shadowRoot);
   try { await upstream.request("initialize", {
@@ -313,7 +329,7 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     await applyOverlay(original, overlay);
   }
   } catch (error) { await close(); throw error; }
-  return { peer, close, applyOverlay, closeOverlay, currentDiagnostics, refreshSources, distributionRoot: layout.root, privateRoot: shadowRoot, classpath: uniqueClasspath };
+  return { peer, close, applyOverlay, closeOverlay, documentDiagnostics, readDependencySource, refreshSources, distributionRoot: layout.root, privateRoot: shadowRoot, classpath: uniqueClasspath };
 }
 
 export default { startKotlin };

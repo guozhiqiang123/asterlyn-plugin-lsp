@@ -1,4 +1,8 @@
-# Kotlin diagnostics version gate (development component)
+This directory preserves the prior 2.1 patch-build receipt. Android profile 0.3.6 uses the
+separately verified full 2.3.21 fork in `../kotlin-2.3.21`; this legacy JAR is no longer
+injected or shipped as the active runtime.
+
+# Historical Kotlin 2.1 diagnostics component
 
 This component is a minimal source patch for fwcd Kotlin Language Server 1.3.13. It is based on
 the public repository commit `6d9e61b79d4631e75516def7ab7ff0d8b9310467` and the published archive

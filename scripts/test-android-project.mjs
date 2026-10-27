@@ -72,17 +72,29 @@ try {
   for (const probe of probes) {
     const doc = docs.get(probe.path), started = Date.now(), result = await request("definition", doc, probe);
     const targets = (Array.isArray(result) ? result : [result]).filter(Boolean);
-    assert.ok(targets.some(target => (target.uri ?? target.targetUri)?.endsWith(probe.target)), `definition did not reach ${probe.target}`);
-    assert.ok(await request("hover", doc, probe), "hover is empty");
+    if (probe.readonlySymbol) {
+      const target = targets.find(target => (target.uri ?? target.targetUri)?.startsWith("asterlyn-source://") && target.readonlySource?.languageId === "kotlin" && target.readonlySource.text.includes(probe.readonlySymbol));
+      assert.ok(target, `compiled definition is missing ${probe.readonlySymbol}`);
+      const identity = new URL(target.uri ?? target.targetUri), source = target.readonlySource;
+      assert.equal(identity.hostname, hash(source.text).slice(7), "compiled source content identity differs");
+      const range = target.targetSelectionRange ?? target.range;
+      const at = point => source.text.split("\n").slice(0, point.line).reduce((sum, line) => sum + line.length + 1, 0) + point.character;
+      assert.equal(source.text.slice(at(range.start), at(range.end)), probe.readonlySymbol, "compiled definition range misses its selected symbol");
+    } else assert.ok(targets.some(target => (target.uri ?? target.targetUri)?.endsWith(probe.target)), `definition did not reach ${probe.target}`);
+    const hover = await request("hover", doc, probe);
+    assert.ok(hover, "hover is empty");
+    if (probe.readonlySymbol) assert.ok(JSON.stringify(hover).includes(probe.readonlySymbol), "compiled-symbol hover is missing its declaration");
     const completions = await request("completion", doc, {...probe, symbol: probe.completion});
     assert.ok((completions?.items ?? completions)?.length, "completion is empty");
-    summary.checks.push({language: doc.languageId, definitionTarget: probe.target, hover: true, completion: true, durationMs: Date.now() - started});
+    summary.checks.push({language: doc.languageId, definitionTarget: probe.target ?? probe.readonlySymbol, readonlySource: Boolean(probe.readonlySymbol), hover: true, completion: true, durationMs: Date.now() - started});
     console.log(JSON.stringify({stage: "semantic-checked", ...summary.checks.at(-1)}));
     await writeFile(evidenceFile, `${JSON.stringify({...summary, inProgress: true}, null, 2)}\n`);
   }
   for (const language of ["java", "kotlin"]) {
     const doc = [...docs.values()].find(doc => doc.languageId === language), original = doc.text;
     const baseline = await request("diagnostic", doc, {});
+    const baselineErrors = baseline.items.filter(item => item.severity === 1);
+    assert.equal(baselineErrors.length, 0, `valid ${language} probe has baseline errors: ${baselineErrors.map(item => item.code).join(",")}`);
     const injectedLine = original.split("\n").length, started = Date.now();
     doc.text += language === "java" ? "\nclass AsterlynUnsavedProbe { void invalid( }\n" : "\nval asterlynUnsavedProbe = ;\n";
     doc.version++;

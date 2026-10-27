@@ -8,7 +8,7 @@ import {createJavaModel, prepareJdt} from "./java-model.mjs";
 import {prepareAndroidKotlin} from "./android-kotlin.mjs";
 
 const host = new RpcPeer(process.stdin, process.stdout);
-const documents = new Map(), kotlinDiagnostics = new Map();
+const documents = new Map();
 let options, backend, child, languageContext, stateDirectory, modelGeneration = null;
 let workspaceRoot, sourceDirectories = [], backendReady = false;
 let loading = null, poll, closed = false, indexing = true, epoch = 0, revision = 0, active = 0;
@@ -52,8 +52,8 @@ function queueOverlay(uri, doc, closing = false) {
   }).finally(() => {overlayPending--;}).catch(error => {if (!closed && context === languageContext) status(!indexing,"warning",errorCode(error));});
   return overlayQueue;
 }
-async function canonical(value, budget = {bytes: 0}) {
-  if (Array.isArray(value)) {const result = []; for (const item of value) result.push(await canonical(item, budget)); return result;}
+async function canonical(value, budget = {bytes: 0}, documentUri) {
+  if (Array.isArray(value)) {const result = []; for (const item of value) result.push(await canonical(item, budget, documentUri)); return result;}
   if (!value || typeof value !== "object") return value;
   const target = value.targetUri ?? value.uri;
   if (typeof target === "string" && target.startsWith("file:")) {
@@ -63,6 +63,12 @@ async function canonical(value, budget = {bytes: 0}) {
     if (origin) return origin;
     const inside = root => {const path = relative(root, targetPath); return path === "" || (!isAbsolute(path) && path !== ".." && !path.startsWith(`..${sep}`));};
     if (!inside(workspaceRoot)) {
+      const preview = documentUri && await languageContext?.readDependencySource(canonicalTarget, documentUri);
+      if (preview) {
+        if ((budget.bytes += Buffer.byteLength(preview.text)) > 2 * 1024 * 1024) throw Error("dependency-source-bound");
+        const uri = `asterlyn-source://${hash(preview.text).slice(7)}/${encodeURIComponent(preview.path)}`;
+        return {...value, ...(value.targetUri ? {targetUri: uri} : {uri}), readonlySource: preview};
+      }
       if (!sourceDirectories.some(inside)) throw Error("dependency-source-not-admitted");
       const metadata = await stat(targetPath);
       if (!metadata.isFile() || metadata.size > 512 * 1024) throw Error("dependency-source-bound");
@@ -84,7 +90,7 @@ async function canonical(value, budget = {bytes: 0}) {
   }
   return Object.fromEntries(await Promise.all(Object.entries(value).map(async ([key, item]) => [key,
     (key === "uri" || key === "targetUri") && typeof item === "string" && item.startsWith("file:")
-      ? pathToFileURL(await realpath(fileURLToPath(item))).href : await canonical(item, budget)])));
+      ? pathToFileURL(await realpath(fileURLToPath(item))).href : await canonical(item, budget, documentUri)])));
 }
 async function stopBackend() {
   const previous = child, context = languageContext, directory = stateDirectory;
@@ -107,7 +113,7 @@ async function load(refresh = false) {
     indexing = true; revision++; status(false, "ok", "preparing-language-model");
     const metadata = await stat(reference.path); if (!metadata.isFile() || metadata.size !== reference.bytes) throw Error("model-integrity");
     const bytes = await readFile(reference.path); if (bytes.length !== reference.bytes || hash(bytes) !== reference.digest) throw Error("model-integrity");
-    const model = JSON.parse(bytes); await stopBackend(); kotlinDiagnostics.clear();
+    const model = JSON.parse(bytes); await stopBackend();
     workspaceRoot = await realpath(model.buildRoot);
     sourceDirectories = [];
     for (const module of model.modules ?? []) for (const attachment of module.sourceAttachments ?? []) {
@@ -122,8 +128,8 @@ async function load(refresh = false) {
       languageContext = await prepareAndroidKotlin({model, stateDirectory: state, options, documents: new Map([...documents].map(([uri, doc]) => [uri, {...doc}])),
         onBackendReady: () => {if(!closed)status(!indexing);},
         onJavaAbiReady: () => {if (!closed && backendReady) {status(!indexing); refreshDiagnostics();}},
-        onDiagnostics: params => {const doc = documents.get(params?.uri); if (!overlayPending && doc?.version === params?.version && Array.isArray(params.diagnostics)) {kotlinDiagnostics.set(params.uri, {version: params.version, items: params.diagnostics}); host.notify("textDocument/publishDiagnostics", params);}},
-        onChanged: async changes => {if (!backendReady) return; backend.notify("workspace/didChangeWatchedFiles", {changes: changes.map(item => typeof item === "string" ? {uri: item, type: 2} : item)}); await backend.request("workspace/executeCommand", {command: "asterlyn.java.refreshModel", arguments: []}); if(!indexing)status(true);refreshDiagnostics();}, onError: error => {if(closed)return;if(error?.message==="kotlin-backend-exited"){kotlinDiagnostics.clear();refreshDiagnostics();}status(!indexing,"warning",error?.message==="kotlin-backend-exited"?"kotlin-backend-exited":"java-analysis-awaiting-kotlin");}});
+        onDiagnostics: params => {const doc = documents.get(params?.uri); if (!overlayPending && doc?.version === params?.version && Array.isArray(params.diagnostics)) {host.notify("textDocument/publishDiagnostics", params);}},
+        onChanged: async changes => {if (!backendReady) return; backend.notify("workspace/didChangeWatchedFiles", {changes: changes.map(item => typeof item === "string" ? {uri: item, type: 2} : item)}); await backend.request("workspace/executeCommand", {command: "asterlyn.java.refreshModel", arguments: []}); if(!indexing)status(true);refreshDiagnostics();}, onError: error => {if(closed)return;if(error?.message==="kotlin-backend-exited"){refreshDiagnostics();}status(!indexing,"warning",error?.message==="kotlin-backend-exited"?"kotlin-backend-exited":"java-analysis-awaiting-kotlin");}});
       try {await languageContext.awaitJavaAbi();} catch {partialJava = true;}
     }
     const view = await createJavaModel(model, state, languageContext?.extraSources), java = options.tools?.serverJava?.java, jdt = options.components?.jdtls?.root;
@@ -155,9 +161,11 @@ async function load(refresh = false) {
 }
 async function diagnostics(uri, doc, version) {
   if (doc.languageId === "kotlin") {
-    await languageContext?.ensureDocument(uri);
-    for (let attempt = 0; attempt < 400; attempt++) {if (doc.version !== version) throw Error("stale-diagnostics"); const current = !overlayPending && languageContext.currentDiagnostics(uri); if (current?.version === version) {host.notify("textDocument/publishDiagnostics", current); return {kind: "full", items: current.diagnostics};} await pause(50);}
-    throw Error("kotlin-diagnostics-pending");
+    const context = languageContext, current = revision;
+    const report = await context.documentDiagnostics(uri);
+    if (context !== languageContext || current !== revision || overlayPending || documents.get(uri) !== doc || doc.version !== version || report.version !== version) throw Error("stale-diagnostics");
+    host.notify("textDocument/publishDiagnostics", report);
+    return {kind: "full", items: report.diagnostics};
   }
   // Syntax diagnostics depend on the current Java working copy only. Keep them responsive while
   // Kotlin ABI is rebuilding; type diagnostics wait until that exact ABI revision is committed.
@@ -185,7 +193,7 @@ host.on("request", async request => {
       if (!["textDocument/definition", "textDocument/references", "textDocument/hover", "textDocument/completion"].includes(request.method)) throw Error("unsupported-method");
       if (doc.languageId === "kotlin") result = await languageContext.request(request.method, params);
       else {if (languageContext?.javaAbiCurrent() === false) {void languageContext.awaitJavaAbi().catch(() => {}); throw Error("android-indexing");} result = await backend.request(request.method, params);}
-      if (["textDocument/definition", "textDocument/references"].includes(request.method)) result = await canonical(result);
+      if (["textDocument/definition", "textDocument/references"].includes(request.method)) result = await canonical(result, {bytes: 0}, params.textDocument.uri);
     }
     if (doc.version !== version || current !== revision) throw Error("stale-result");
     host.reply(request.id, result);
@@ -196,9 +204,9 @@ host.on("notification", notification => {
   const {method, params} = notification;
   if (method === "initialized") {status(false); void load(); poll = setInterval(() => void load(), 5000); poll.unref();}
   else if (method === "asterlyn/modelInvalidated") {indexing = true; revision++; modelGeneration = null; retryAt = 0; status(false); void load();}
-  else if (method === "textDocument/didOpen") {const doc = params.textDocument; if (documents.size >= 32 && !documents.has(doc.uri)) return; documents.set(doc.uri, {languageId: doc.languageId, version: doc.version, text: doc.text}); revision++; kotlinDiagnostics.clear(); if (backendReady) {if (doc.languageId === "java") backend.notify(method, params); void queueOverlay(doc.uri, doc);} }
-  else if (method === "textDocument/didChange") {try {update(params); revision++; kotlinDiagnostics.clear(); if (backendReady) {if (document(params.textDocument.uri).languageId === "java") backend.notify(method, params); void queueOverlay(params.textDocument.uri, document(params.textDocument.uri)); refreshDiagnostics();}} catch {}}
-  else if (method === "textDocument/didClose") {const doc = documents.get(params.textDocument.uri); documents.delete(params.textDocument.uri); revision++; kotlinDiagnostics.clear(); if (backendReady) {if (doc?.languageId === "java") backend.notify(method, params); void queueOverlay(params.textDocument.uri, null, true); refreshDiagnostics();}}
+  else if (method === "textDocument/didOpen") {const doc = params.textDocument; if (documents.size >= 32 && !documents.has(doc.uri)) return; documents.set(doc.uri, {languageId: doc.languageId, version: doc.version, text: doc.text}); revision++; if (backendReady) {if (doc.languageId === "java") backend.notify(method, params); void queueOverlay(doc.uri, doc);} }
+  else if (method === "textDocument/didChange") {try {update(params); revision++; if (backendReady) {if (document(params.textDocument.uri).languageId === "java") backend.notify(method, params); void queueOverlay(params.textDocument.uri, document(params.textDocument.uri)); refreshDiagnostics();}} catch {}}
+  else if (method === "textDocument/didClose") {const doc = documents.get(params.textDocument.uri); documents.delete(params.textDocument.uri); revision++; if (backendReady) {if (doc?.languageId === "java") backend.notify(method, params); void queueOverlay(params.textDocument.uri, null, true); refreshDiagnostics();}}
   else if (method === "exit") {closed = true; clearInterval(poll); void stopBackend().finally(() => process.exit(0));}
 });
 host.on("fatal", () => {closed = true; clearInterval(poll); void stopBackend().finally(() => process.exit(1));});

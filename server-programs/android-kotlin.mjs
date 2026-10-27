@@ -20,12 +20,12 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
   const sessionRoot = join(pathOf(stateDirectory), `android-kotlin-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   await mkdir(sessionRoot, {recursive: true});
   const abort = new AbortController(), compilerRoot = pathOf(options.components["kotlin-compiler-bridge"].root);
-  const compilerJar = await findJar(compilerRoot, "kotlin-compiler-embeddable-2.2.0.jar");
-  const kaptJar = await findJar(compilerRoot, "kotlin-annotation-processing-embeddable-2.2.0.jar");
-  const languageRoot = pathOf(options.components["kotlin-language-server"].root);
-  const patchJar = fileURLToPath(new URL("./kotlin-patched-server.jar", import.meta.url));
+  const compilerJar = await findJar(compilerRoot, "kotlin-compiler-embeddable-2.3.21.jar");
+  const kaptJar = await findJar(compilerRoot, "kotlin-annotation-processing-embeddable-2.3.21.jar");
+  const languageRoot = pathOf(options.components["kotlin-language-server-asterlyn"].root);
   const java = pathOf(options.tools.kotlinJava.java), runtimeJars = [];
-  for (const file of await readdir(join(languageRoot, "server/lib"))) if (file.endsWith(".jar")) runtimeJars.push(join(languageRoot, "server/lib", file));
+  // The compiler bridge carries its own pinned runtime closure; do not mix server/compiler JARs.
+  for (const file of await readdir(compilerRoot)) if (file.endsWith(".jar") && !file.startsWith("kotlin-compiler-embeddable-") && !file.startsWith("kotlin-annotation-processing-embeddable-")) runtimeJars.push(join(compilerRoot, file));
   const byId = new Map(model.modules.map(module => [module.module, module]));
   const closure = id => {
     const seen = new Set(), result = [];
@@ -111,7 +111,7 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
           entries.delete(id); void entry.service?.close(); onError(Error("kotlin-backend-exited"));
         }
       };
-      const service = await startKotlin({model: {...model, modules: closure(id)}, stateDirectory: join(sessionRoot, `kotlin-${moduleHash(id)}`), java, component: {distributionRoot: languageRoot, patchJar}, overlays: initialDocs, configuration: {onError, onClosed, onDiagnostics: params => {
+      const service = await startKotlin({model: {...model, modules: closure(id)}, stateDirectory: join(sessionRoot, `kotlin-${moduleHash(id)}`), java, component: {distributionRoot: languageRoot}, overlays: initialDocs, configuration: {onError, onClosed, onDiagnostics: params => {
         if (!abort.signal.aborted && moduleFor(params.uri) === id) onDiagnostics?.(params);
       }}});
       entry.service = service;
@@ -162,6 +162,12 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
     entry.refs++; entry.lastUsed = Date.now();
     try {return await service.peer.request(method, params, timeout);} finally {entry.refs--; entry.lastUsed = Date.now();}
   };
+  const documentDiagnostics = async file => {
+    const service = await startIfNeeded(file), entry = entries.get(moduleFor(file));
+    if (!service || !entry || entry.service !== service) throw Error("kotlin-session-changed");
+    entry.refs++; entry.lastUsed = Date.now();
+    try {return await service.documentDiagnostics(file);} finally {entry.refs--; entry.lastUsed = Date.now();}
+  };
   const mapJavaDefinition = async (location, jdtPeer) => {
     const file = pathOf(location.uri), stable = [...stableRoots.values()].find(root => inside(root, file));
     if (!stable || !latest) return null;
@@ -176,6 +182,6 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
     await Promise.all([...entries.values()].map(closeEntry));
     await kaptPromise?.catch(() => {}); await rm(sessionRoot, {recursive: true, force: true});
   };
-  const currentDiagnostics = file => entries.get(moduleFor(file))?.service?.currentDiagnostics(file) ?? null;
-  return {extraSources: stableRoots, startIfNeeded, ensureDocument: startIfNeeded, currentDiagnostics, applyOverlay, closeOverlay, refreshSources, awaitJavaAbi: ensureAbi, javaAbiCurrent: () => builtRevision === revision && latest !== null, request, mapJavaDefinition, close};
+  const readDependencySource = (target, document) => entries.get(moduleFor(document))?.service?.readDependencySource(target) ?? null;
+  return {extraSources: stableRoots, startIfNeeded, documentDiagnostics, readDependencySource, applyOverlay, closeOverlay, refreshSources, awaitJavaAbi: ensureAbi, javaAbiCurrent: () => builtRevision === revision && latest !== null, request, mapJavaDefinition, close};
 }

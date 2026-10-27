@@ -125,6 +125,24 @@ try {
   }
   warm.sort((a,b)=>a-b); summaries.timing.warmBidirectionalPairP50Ms = Math.round(warm[9]); summaries.timing.warmBidirectionalPairP95Ms = Math.round(warm[18]);
   const validKotlin = docs.get("LibraryValue.kt").text;
+  const caller = docs.get("MainActivity.kt"), callerVersion = caller.version;
+  const pullCaller = () => peer.request("textDocument/diagnostic", {textDocument: {uri: caller.uri}}, 30000);
+  assert.equal((await pullCaller()).items.filter(item => item.severity === 1).length, 0);
+  change("LibraryValue.kt", validKotlin.replace("fun greeting()", "fun greeting(required: Int)"));
+  const dependentDiagnostics = await pullCaller();
+  assert.equal(caller.version, callerVersion, "dependent diagnostics update without editing the caller");
+  assert.ok(dependentDiagnostics.items.some(item => item.severity === 1 && item.range.start.line === position(caller.text, "greeting()").line));
+  change("LibraryValue.kt", validKotlin);
+  assert.equal((await pullCaller()).items.filter(item => item.severity === 1).length, 0);
+  summaries.checks.unchangedCallerDiagnosticsRefresh = true;
+  const validCaller = caller.text;
+  change("MainActivity.kt", `${validCaller}\nval closeDiscardedError = ;\n`);
+  assert.ok((await pullCaller()).items.some(item => item.severity === 1));
+  peer.notify("textDocument/didClose", {textDocument: {uri: caller.uri}});
+  caller.text = validCaller; caller.version++;
+  peer.notify("textDocument/didOpen", {textDocument: caller});
+  assert.equal((await pullCaller()).items.filter(item => item.severity === 1).length, 0);
+  summaries.checks.closedDiagnosticsDoNotLeakOnReopen = true;
   change("LibraryValue.kt", validKotlin.replace("object LibraryValue {", "import com.example.fixture.JavaUse\n\nobject LibraryValue {\n    fun invalidDependency() = JavaUse.value(null)"));
   const reverse = first(await semantic("definition", "LibraryValue.kt", "JavaUse.value"));
   assert.ok(!reverse, "library module must not resolve an app-only dependency");

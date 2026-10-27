@@ -198,3 +198,56 @@ Direct JDT baseline→edit/category/version/digest regression passes. The real c
 case has zero baseline diagnostics and reports all five new syntax errors on line 21 in 13 ms;
 its Java definition/hover/completion also passes, business source hashes unchanged. Full 25-module
 and final installed-package evidence follows in the host recovery record.
+
+
+### 0.3.6 Kotlin 2.3 metadata and reliable diagnostic pull
+
+The real project selects Kotlin stdlib 2.3.21, beyond the earlier compiler's metadata
+reader. The publisher-owned source component now rebuilds pinned MIT fwcd source on
+Kotlin 2.3.21 with its complete pinned runtime/license closure. It replaces the old
+2.1 patched JAR instead of mixing compiler versions. Main project dependency versions,
+TLS validation and global network configuration are unchanged. Standard-library
+deserialized declarations get bounded content-addressed compiled declaration previews;
+their unavailable implementation is explicitly stated.
+
+The first exact 0.3.6 candidate completes the unchanged boostCleaner 25-module model in
+239.901 s and passes all five semantic groups, including coerceAtLeast and minutes.
+Both language baseline error counts are zero; injected new-line errors are correctly
+positioned (Java 14 ms, Kotlin 414 ms). Source hashes are unchanged. Peak owned-process
+RSS 1,689,632 KiB; shutdown 2.514 s. This candidate still intermittently loses a
+debounced push report in the mixed fixture, so these measurements alone do not close
+acceptance. Final package/component identities and repeat runs follow below.
+
+The follow-up uses a private version/digest-bound Kotlin diagnostic pull instead of
+waiting 20 s for push. The adapter also invalidates unchanged callers' context, releases
+closed Kotlin ownership and retains monotonic private versions across reopen. The
+fixture now explicitly checks a dependency signature change affecting an unchanged
+caller and discarding/reopening a buffer with errors. No custom Android RPC or compiler
+code is added to the host; its standard diagnostic protocol is unchanged.
+
+Final packaged fixture receipt: LSP 0.3.6, 4,649,258 bytes, SHA-256
+`03596cc16c0063daca7d87f3b2509f6b1816ae7025ec73db515c803a27dbcada`.
+The exact extracted archive passes all 14 checks, including unchanged-caller
+diagnostics and close/discard/reopen. Ready 8.071 s, total 40.928 s, peak
+1,656,080 KiB, shutdown 906 ms; warm paired definitions p50 6 ms / p95 9 ms.
+Java syntax remains responsive in 29 ms while Kotlin is invalid. All owned
+processes stop after shutdown. Typecheck, 8 ordinary tests, complete package
+inspection and native helper→desktop validator→contribution routing pass.
+
+Component identity is `kotlin-language-server-asterlyn@1.3.13-asterlyn.2.3.21.2`,
+archive SHA-256 `dca2069025626c15dc97c4a83601dbbd8ecd18a90bb5854f45d9617a13c55ef0`,
+content digest `0cb71b321e42f993f63acd733a6f57eab684b88ac46a4d2ca5870598c408dcbd`,
+90,232,335 archive bytes / 115 files. Two independent source rebuilds produce
+identical archives. Compiler/KAPT 2.3.21 uses the complete ten-file component
+`28f04ffa1a30c2961cb8c71bf655e046ba39ca6d375d2fe81b99e73c842ae1bb`.
+Both remain explicit offline, verified analysis components rather than host
+compiler dependencies or automatic project dependency downloads.
+
+The same final archive is being rechecked against all 25 unchanged boostCleaner
+modules. First full KAPT/JDT preparation can take several minutes and Kotlin ABI
+changes currently regenerate the model's stubs; Java syntax diagnostics remain
+available during that work, while stale type-dependent requests ask for retry.
+Standard library previews expose declarations, not unavailable source bodies.
+This milestone does not add Gradle scripts/Groovy/XML/generated-source builds,
+full cross-language references or a large-project memory soak guarantee. Existing
+keyboard/readonly preview accessibility is retained without a new UI control.

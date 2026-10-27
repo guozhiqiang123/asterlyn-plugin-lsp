@@ -126,10 +126,12 @@ export async function startKotlin({ model, stateDirectory, java, component, over
   const jars = (await readdir(layout.lib)).filter((name) => name.endsWith(".jar")).map((name) => join(layout.lib, name));
   const serverJar = join(layout.lib, "server-1.3.13.jar");
   const runtimeClasspath = [serverJar, ...jars.filter((jar) => jar !== serverJar)].join(delimiter);
+  const patchJar = component?.patchJar ? resolve(asPath(component.patchJar)) : null;
+  const effectiveClasspath = patchJar ? [patchJar, ...jars.filter((jar) => jar !== serverJar)].join(delimiter) : runtimeClasspath;
   const javaPath = asPath(java);
-  configuration.onStart?.({ javaPath, runtimeClasspath: runtimeClasspath.split(delimiter).length, lib: layout.lib });
+  configuration.onStart?.({ javaPath, runtimeClasspath: effectiveClasspath.split(delimiter).length, lib: layout.lib, patchJar });
   const env = { HOME: process.env.HOME ?? state, TMPDIR: process.env.TMPDIR ?? "/tmp", PATH: `${dirname(javaPath)}:/usr/bin:/bin`, JAVA_HOME: resolve(dirname(dirname(javaPath))), XDG_CONFIG_HOME: configRoot };
-  const child = spawn(javaPath, ["-Xmx2G", "-cp", runtimeClasspath, "org.javacs.kt.MainKt"], { cwd: shadowRoot, env, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(javaPath, ["-Xmx2G", "-cp", effectiveClasspath, "org.javacs.kt.MainKt"], { cwd: shadowRoot, env, stdio: ["pipe", "pipe", "pipe"] });
   child.stderr.on("data", (chunk) => configuration.onStderr?.(String(chunk).slice(0, 4096)));
   const upstream = new RpcPeer(child.stdout, child.stdin);
   const map = mapUriFactory(mappings, shadowRoot);

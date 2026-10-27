@@ -135,7 +135,10 @@ export async function startKotlin({ model, stateDirectory, java, component, over
   const javaPath = asPath(java);
   configuration.onStart?.({ javaPath, runtimeClasspath: effectiveClasspath.split(delimiter).length, lib: layout.lib, patchJar });
   const env = { HOME: process.env.HOME ?? state, TMPDIR: process.env.TMPDIR ?? "/tmp", PATH: `${dirname(javaPath)}:/usr/bin:/bin`, JAVA_HOME: resolve(dirname(dirname(javaPath))), XDG_CONFIG_HOME: configRoot };
-  const child = spawn(javaPath, ["-Xmx1024m", "-cp", effectiveClasspath, "org.javacs.kt.MainKt"], { cwd: shadowRoot, env, stdio: ["pipe", "pipe", "pipe"] });
+  // Keep the semantic server from exhausting its worker threads on large Android
+  // models.  ExitOnOutOfMemoryError is intentional: a half-alive JVM cannot
+  // answer LSP requests reliably and must be reclaimed by the owning session.
+  const child = spawn(javaPath, ["-Xmx2048m", "-XX:+ExitOnOutOfMemoryError", "-cp", effectiveClasspath, "org.javacs.kt.MainKt"], { cwd: shadowRoot, env, stdio: ["pipe", "pipe", "pipe"] });
   child.stderr.on("data", (chunk) => configuration.onStderr?.(String(chunk).slice(0, 4096)));
   const upstream = new RpcPeer(child.stdout, child.stdin);
   const map = mapUriFactory(mappings, shadowRoot);

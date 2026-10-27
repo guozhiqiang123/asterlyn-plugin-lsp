@@ -86,3 +86,35 @@ The metadata reader was built with Amazon Corretto Java 17.0.17 (`--release 17`)
 Final crash-recovery package run also passes forced termination/restart of the owned Kotlin JVMs:
 ready 8.217 s, complete test 41.899 s, peak 1,284,096 KiB, shutdown 827 ms, warm paired definitions
 p50 8 ms / p95 19 ms. All observed child processes are checked stopped after shutdown.
+
+
+## Real boostCleaner memory recovery (0.3.1)
+
+The first full 25-module project probe reached readiness after 233,821 ms, then the app-module
+Kotlin worker exhausted its 1 GiB heap. A thread dump and heap sample showed worker threads gone,
+heap 1,046,859 / 1,048,576 KiB, but the JVM stayed alive. The Java definition/hover/completion case
+passed; Kotlin was rejected after transport timeouts, so that artifact did not pass real-project
+acceptance.
+
+The Kotlin worker now has a fixed 2 GiB heap ceiling and `-XX:+ExitOnOutOfMemoryError`. At most two
+lazy module-closure Kotlin workers remain allowed; this is a heap maximum, not an RSS guarantee or
+up-front allocation. JDT retains its separate 1 GiB limit; transient compiler processes add memory.
+Only the owning Kotlin backend exits on exhaustion, and its existing closed callback removes that
+session entry so a later request can recreate it. A separate 32 MiB JVM OOM probe exited with code
+3 rather than leaving a half-alive process.
+
+With the 2 GiB configuration, the unchanged boostCleaner app source `AdsRuntimeState.kt` resolved
+`SharedPref.getLong` into the real common module Java file in 1,823 ms; hover passed, total direct
+Kotlin probe 4,843 ms, no OOM. Full packaged-adapter and installed acceptance are recorded in the
+host [real-project recovery record](../../asterlyn/docs/engineering/2026-10-27-boostcleaner-lsp-recovery.md).
+
+Package 0.3.1: 5,073,300 bytes, SHA-256
+`7e849e7c6d745e11bc45e5bcb4ed21a952ad2f3165dd925e33e714289d84cd13`.
+No server JAR or component receipt changed. Typecheck, 6 ordinary tests, package inspection and
+native helper → desktop validation → TS/Rust/Android contribution routing pass.
+
+`scripts/test-android-project.mjs` accepts an extracted package, verified model, reviewed component
+options and local probe descriptions. It checks real definitions/hover/completion and unsaved
+Java/Kotlin diagnostics, verifies source hashes remain unchanged, and records stages, timing and
+process-tree RSS. It never saves overlay edits to the business project. Probe configurations and
+raw local diagnostics are not committed.

@@ -135,13 +135,24 @@ export async function startKotlin({ model, stateDirectory, java, component, over
   child.stderr.on("data", (chunk) => configuration.onStderr?.(String(chunk).slice(0, 4096)));
   const upstream = new RpcPeer(child.stdout, child.stdin);
   const map = mapUriFactory(mappings, shadowRoot);
+  const diagnostics = new Map();
+  let contextEpoch = 0;
+  const mapNotification = (message) => {
+    if (message?.method !== "textDocument/publishDiagnostics" || !message.params) return map.output(message.params);
+    const privateUri = message.params.uri;
+    const privatePath = uriPath(privateUri);
+    const state = privatePath && openKotlin.get(privatePath);
+    if (!state || message.params.version !== state.privateVersion) return null;
+    diagnostics.set(privatePath, { privateVersion: state.privateVersion, hostVersion: state.hostVersion, contextEpoch: state.contextEpoch });
+    return map.output({ ...message.params, version: state.hostVersion });
+  };
   const peer = {
     request: (method, params, timeout) => upstream.request(method, map.input(params), timeout).then(map.output),
     notify: (method, params) => upstream.notify(method, map.input(params)),
     reply: (id, result) => upstream.reply(id, map.input(result)),
     reject: (...args) => upstream.reject(...args),
-    on: (event, listener) => { upstream.on(event, (message) => listener({ ...message, params: map.output(message.params), result: map.output(message.result) })); return peer; },
-    once: (event, listener) => { upstream.once(event, (message) => listener({ ...message, params: map.output(message.params), result: map.output(message.result) })); return peer; },
+    on: (event, listener) => { upstream.on(event, (message) => { const params = mapNotification(message); if (message.method === "textDocument/publishDiagnostics" && params === null) return; listener({ ...message, params, result: map.output(message.result) }); }); return peer; },
+    once: (event, listener) => { upstream.once(event, (message) => { const params = mapNotification(message); if (message.method === "textDocument/publishDiagnostics" && params === null) return; listener({ ...message, params, result: map.output(message.result) }); }); return peer; },
   };
   const onError = (error) => { if (configuration.onError) configuration.onError(error); };
   upstream.on("fatal", onError).on("closed", () => configuration.onClosed?.());
@@ -166,13 +177,14 @@ export async function startKotlin({ model, stateDirectory, java, component, over
   // therefore needs a cheap Kotlin recompile kick so references observe the
   // new Java ABI without exposing Java documents to KLS.
   const kickKotlinRefresh = () => {
+    contextEpoch++;
     for (const [privatePath, current] of openKotlin) {
-      const version = current.version + 1;
+      const version = current.privateVersion + 1;
       upstream.notify("textDocument/didChange", {
         textDocument: { uri: uriFor(privatePath), version },
         contentChanges: [{ text: current.text }],
       });
-      openKotlin.set(privatePath, { ...current, version });
+      openKotlin.set(privatePath, { ...current, privateVersion: version, contextEpoch });
     }
   };
   const mappedPrivatePath = async (uri) => {
@@ -194,10 +206,11 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     }
     if (extname(privatePath) !== ".kt" && extname(privatePath) !== ".kts") return;
     const prior = openKotlin.get(privatePath);
-    const version = Number(overlay.version ?? prior?.version ?? 1);
-    if (prior) upstream.notify("textDocument/didChange", { textDocument: { uri: uriFor(privatePath), version }, contentChanges: [{ text }] });
-    else upstream.notify("textDocument/didOpen", { textDocument: { uri: uriFor(privatePath), languageId: "kotlin", version, text } });
-    openKotlin.set(privatePath, { version, text });
+    const hostVersion = Number(overlay.version ?? prior?.hostVersion ?? 0);
+    const privateVersion = (prior?.privateVersion ?? 0) + 1;
+    if (prior) upstream.notify("textDocument/didChange", { textDocument: { uri: uriFor(privatePath), version: privateVersion }, contentChanges: [{ text }] });
+    else upstream.notify("textDocument/didOpen", { textDocument: { uri: uriFor(privatePath), languageId: "kotlin", version: privateVersion, text } });
+    openKotlin.set(privatePath, { privateVersion, hostVersion, contextEpoch, text });
   };
   const closeOverlay = async (uri) => {
     const privatePath = await mappedPrivatePath(uri);
@@ -211,9 +224,10 @@ export async function startKotlin({ model, stateDirectory, java, component, over
       kickKotlinRefresh();
     }
     else if (openKotlin.has(privatePath)) {
-      const version = openKotlin.get(privatePath).version + 1;
-      upstream.notify("textDocument/didChange", { textDocument: { uri: uriFor(privatePath), version }, contentChanges: [{ text }] });
-      openKotlin.set(privatePath, { version, text });
+      const current = openKotlin.get(privatePath);
+      const privateVersion = current.privateVersion + 1;
+      upstream.notify("textDocument/didChange", { textDocument: { uri: uriFor(privatePath), version: privateVersion }, contentChanges: [{ text }] });
+      openKotlin.set(privatePath, { ...current, privateVersion, text });
     }
   };
   const refreshSources = async () => {

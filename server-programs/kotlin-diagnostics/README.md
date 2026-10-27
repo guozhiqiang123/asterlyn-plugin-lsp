@@ -11,7 +11,8 @@ carry the same version. An edit that arrives while compilation is running theref
 older result to be discarded instead of being relabelled as current.
 
 The patched development JAR was built from the bundled Kotlin compiler 2.1.0 and the server's
-published libraries. Its reproducible SHA-256 is
+published libraries. This is a reproducible patch build of the complete upstream server JAR;
+it is not a claim that the complete upstream source tree was rebuilt. Its reproducible SHA-256 is
 `080db08585bb91a144c92b7f57b52064e1ce7f0482efa82b086308147f3f2d6f` and its size is 477,673 bytes.
 The reproducible source change is in `diagnostics-version.patch`. The normal Gradle build could not
 be used in the probe environment because Maven Central returned HTTP 403 for the Kotlin Gradle
@@ -26,7 +27,17 @@ documents to the Java service and provide Java sources through the private shado
 ## Offline build
 
 `build.mjs` requires a clean checkout at the pinned commit, an already verified fwcd distribution
-root, and a JDK. It archives the local checkout, applies `diagnostics-version.patch`, and invokes
-the Kotlin compiler JARs from that distribution's `server/lib` directory. It never invokes Gradle,
-resolves Maven coordinates, downloads files, or reads project credentials. The output is based on
-the untouched `server-1.3.13.jar` and receives deterministic timestamps for patched classes.
+root, a JDK, and a manifest covering every regular file in that distribution. The manifest records
+relative path, byte length, and SHA-256; paths are sorted and validated, symlinks are rejected, and
+the complete list is hashed before compilation. It archives the local checkout, applies
+`diagnostics-version.patch`, and invokes the Kotlin compiler JARs from that distribution's
+`server/lib` directory. It never invokes Gradle, resolves Maven coordinates, downloads files, or
+reads project credentials. The output is based on the untouched `server-1.3.13.jar` and receives
+deterministic timestamps for patched classes.
+
+Example (the manifest is generated once from the verified, pinned archive and checked into the
+build receipt):
+
+```text
+node build.mjs <fwcd-source> <distribution-root> <jdk-home> <output.jar> <distribution-manifest.json>
+```

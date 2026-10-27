@@ -12,11 +12,20 @@ mapping. The intended fixed artifact is:
 org.jetbrains.kotlin:kotlin-annotation-processing-embeddable:2.1.0
 ```
 
-The fwcd distribution does not include this plugin. An attempted download from Maven Central
-(`repo1.maven.org` and `repo.maven.apache.org`) was rejected with HTTP 403 in the probe
-environment, so no unverified or IDE-extracted binary was accepted. The component must be fetched
-through the normal dependency intake, recorded with license/version/SHA-256, then used with
-`aptMode=stubs` and `correctErrorTypes=true`.
+The fwcd distribution does not include this plugin. The primary Maven endpoints returned HTTP 403,
+but four independent public mirrors returned identical bytes. The accepted artifact receipt is:
+
+```text
+kotlin-annotation-processing-embeddable-2.1.0.jar
+sha256 c6aa1dcff41f993628f33bda4603328ad603c24d893a6def104f7b74d4eceb47
+license Apache-2.0 (POM URL: https://www.apache.org/licenses/LICENSE-2.0.txt)
+mirrors Google Central, JetBrains cache-redirector, Huawei, Aliyun
+```
+
+KAPT must run with the matching embeddable compiler 2.1.0 (SHA-256
+`c1b139a6f251c3b99e92befa326cb75d93a001d74c3ac601155a8cdb0d253783`) before the fwcd support
+libraries. The standalone API is `generateKaptStubs()` in `kotlin-kapt-stubs.mjs`; it uses
+`aptMode=stubs`, `correctErrorTypes=true`, and emits Java stubs plus `.kapt_metadata`.
 
 Before product integration, the bridge must prove all of the following with a multi-file fixture:
 

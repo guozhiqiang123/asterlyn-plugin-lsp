@@ -63,3 +63,11 @@ Kotlin 官方 Alpha/实验性 Android 支持、部分闭源及独立包条款需
 ### C1 验收（2026-10-27）
 
 0.2.1 真实包声明 `pluginDependencies` 和 Android Gradle >=0.5.10、<1.0.0，SDK 精确升级至宿主开发制品 1.13.0。插件 check、5 项测试、build、打包和 inspector 均通过。包 4,579,774 B，SHA-256 `c341c81055601c150556973ea45c0189fb64a92dbbfc9fe7c1ad8f63fbfb8486`。宿主验证了原生事务、旧包回退最低约束、管理页锁/解除锁及跨窗口同步。TS/JS/Rust provider 保持原行为，尚不发布 Android profile。
+
+## 持续实施 / C4 后端适配（2026-10-27）
+
+用户要求继续直到 Android LSP 可用。宿主 ADR-0036 冻结通用随包分析程序/模型交付；隔离 descriptor 仍无文件或进程权限，独立 server-program 资源仅由宿主审查、启动和回收。
+
+Java 已通过真实 AGP 模型的私有 Eclipse linked-source 视图，在 boostCleaner RecommendConfig.java 定义跳转到 SharedPref.java 且 hover 非空，源项目不写 Eclipse 元数据。后端适配将放在本插件 server-programs/，不写进宿主。JDT 无版本诊断不能直接标上当前版本；拟用本插件自有 JDT 扩展命令，在 working-copy 上同步 reconcile 并校验源文摘要，形成可证明的 pull 诊断，丢弃未经版本绑定的 push。依赖/SDK 来源走受控只读文档，不放开任意文件 URI。
+
+JDT/JVM 作为独立受控组件；宿主启动包不包含新的 JDK/AGP/JDT 分发。Kotlin 继续核验开源后端与独立发行条款，不以缺乏语义的文本搜索代替语言能力。

@@ -18,7 +18,7 @@ async function findJar(root, names) {
   throw new Error(`kotlin-component-jar-missing:${names.join(",")}`);
 }
 
-export async function prepareAndroidKotlin({ model, stateDirectory, options, documents = new Map(), onDiagnostics, onChanged }) {
+export async function prepareAndroidKotlin({ model, stateDirectory, options, documents = new Map(), onDiagnostics, onChanged, onError = () => {} }) {
   const state = pathOf(stateDirectory);
   const sessionRoot = join(state, `android-kotlin-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   await mkdir(sessionRoot, { recursive: true });
@@ -34,6 +34,8 @@ export async function prepareAndroidKotlin({ model, stateDirectory, options, doc
   let latest = null;
   let kaptPromise = null;
   let kotlin = null;
+  let kotlinStarting = null;
+  let closed = false;
   let timer = null;
   const stableRoots = new Map();
   let revision = 0, builtRevision = -1;
@@ -52,10 +54,10 @@ export async function prepareAndroidKotlin({ model, stateDirectory, options, doc
       }
       stableRoots.set(result.module, stable);
     }
-    onChanged?.([...generated.perModuleRoots.flatMap((result) => result.metadata.map((metadata) => ({ uri: uri(join(stableRoots.get(result.module), metadata.slice(result.stubRoot.length + 1).replace(/\.kapt_metadata$/, ".java"))), type: 1 })))]);
+    await onChanged?.([...generated.perModuleRoots.flatMap((result) => result.metadata.map((metadata) => ({ uri: uri(join(stableRoots.get(result.module), metadata.slice(result.stubRoot.length + 1).replace(/\.kapt_metadata$/, ".java"))), type: 1 })))]);
   };
   const regenerate = async () => {
-    const generated = await generateKaptStubs({ model, stateDirectory: sessionRoot, java, compilerJar, kaptJar, runtimeJars, overlays: documents, signal: abort.signal });
+    const generated = await generateKaptStubs({ model, stateDirectory: sessionRoot, java, compilerJar, kaptJar, runtimeJars, overlays: new Map([...(documents instanceof Map ? documents : Object.entries(documents))].map(([uri,doc])=>[uri,{...doc}])), signal: abort.signal });
     await copyStable(generated);
     latest = generated;
     return generated;
@@ -70,25 +72,35 @@ export async function prepareAndroidKotlin({ model, stateDirectory, options, doc
     return builtRevision === revision ? latest : ensureAbi();
   };
   const startIfNeeded = async () => {
-    await ensureAbi();
+    if(closed)throw Error("android-language-session-ended");
     if (!hasKotlin(documents) || kotlin) return;
-    kotlin = await startKotlin({ model, stateDirectory: sessionRoot, java, component: { distributionRoot: languageRoot, patchJar }, overlays: documents, configuration: {} });
-    kotlin.peer.on("notification", (message) => { if (message.method === "textDocument/publishDiagnostics") onDiagnostics?.(message.params); });
+    const abi = await ensureAbi();
+    const kotlinModel = structuredClone(model);
+    for (const module of kotlinModel.modules ?? []) {
+      const result = abi.perModuleRoots.find((entry) => entry.module === module.module);
+      if (result) module.compileClasspath = [...(module.compileClasspath ?? []), result.classRoot];
+    }
+    kotlinStarting ??= startKotlin({model:kotlinModel,stateDirectory:sessionRoot,java,component:{distributionRoot:languageRoot,patchJar},overlays:documents,configuration:{onError,onStderr:onError}}).then(async value=>{
+      if(closed){await value.close();throw Error("android-language-session-ended");}
+      kotlin=value;value.peer.on("notification",message=>{if(message.method==="textDocument/publishDiagnostics")onDiagnostics?.(message.params);});return value;
+    }).finally(()=>{kotlinStarting=null;});
+    await kotlinStarting;
   };
   const applyOverlay = async (fileUri, document) => {
     const next = document ?? {};
+    const prior = documents instanceof Map ? documents.get(fileUri) : documents[fileUri];
+    if(prior?.text===next.text && prior?.version===next.version && prior?.languageId===next.languageId)return;
     revision++;
     if (documents instanceof Map) documents.set(fileUri, next); else documents[fileUri] = next;
-    await ensureAbi();
     if (kotlin) await kotlin.applyOverlay(fileUri, next);
     if (timer) clearTimeout(timer);
-    timer = setTimeout(() => { timer = null; ensureAbi().catch(onDiagnostics); }, 300);
+    timer = setTimeout(() => { timer = null; ensureAbi().catch(onError); }, 300);
   };
   const closeOverlay = async (fileUri) => {
     if (documents instanceof Map) documents.delete(fileUri); else delete documents[fileUri];
     revision++;
     if (kotlin) await kotlin.closeOverlay(fileUri);
-    await ensureAbi();
+    if(timer)clearTimeout(timer);timer=setTimeout(()=>{timer=null;ensureAbi().catch(onError);},300);
   };
   const mapJavaDefinition = async (location, jdtPeer) => {
     const file = pathOf(location.uri);
@@ -105,7 +117,8 @@ export async function prepareAndroidKotlin({ model, stateDirectory, options, doc
   };
   const close = async () => {
     if (timer) clearTimeout(timer);
-    abort.abort();
+    closed=true;abort.abort();
+    await kotlinStarting?.catch(()=>{});
     await kotlin?.close();
     if (kaptPromise) await kaptPromise.catch(() => {});
     await rm(sessionRoot, { recursive: true, force: true });

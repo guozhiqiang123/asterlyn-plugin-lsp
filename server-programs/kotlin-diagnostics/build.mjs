@@ -59,6 +59,7 @@ const java = join(jdk, "bin", "java");
 const compiler = ["-cp", classpath, "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler", "-classpath", classpath, "-d", classes,
   join(scratch, "source/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt"),
   join(scratch, "source/server/src/main/kotlin/org/javacs/kt/KotlinTextDocumentService.kt"),
+  join(scratch, "source/server/src/main/kotlin/org/javacs/kt/KotlinLanguageServer.kt"),
   join(scratch, "source/shared/src/main/kotlin/org/javacs/kt/util/URIs.kt")];
 execFileSync(java, compiler, { stdio: "inherit" });
 await mkdir(resolve(output, ".."), { recursive: true });

@@ -16,7 +16,7 @@ const context = {
 
 test("identity and schema-3 metadata are stable", () => {
   assert.equal(LSP_PLUGIN.id, LSP_PLUGIN_ID);
-  assert.equal(LSP_PLUGIN.version, "0.3.1");
+  assert.equal(LSP_PLUGIN.version, "0.3.2");
   assert.equal(LSP_PLUGIN_MANIFEST.schemaVersion, 3);
   assert.deepEqual(LSP_PLUGIN_MANIFEST.capabilities, ["languageServices", "pluginDependencies", "packagedLanguageServices"]);
   assert.deepEqual(LSP_PLUGIN_MANIFEST.permissions, ["host.language-services.execute"]);

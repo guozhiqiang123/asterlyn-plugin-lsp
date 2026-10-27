@@ -75,6 +75,8 @@ try {
     const completions = await request("completion", doc, {...probe, symbol: probe.completion});
     assert.ok((completions?.items ?? completions)?.length, "completion is empty");
     summary.checks.push({language: doc.languageId, definitionTarget: probe.target, hover: true, completion: true, durationMs: Date.now() - started});
+    console.log(JSON.stringify({stage: "semantic-checked", ...summary.checks.at(-1)}));
+    await writeFile(evidenceFile, `${JSON.stringify({...summary, inProgress: true}, null, 2)}\n`);
   }
   for (const language of ["java", "kotlin"]) {
     const doc = [...docs.values()].find(doc => doc.languageId === language), original = doc.text;
@@ -84,6 +86,7 @@ try {
     const result = await request("diagnostic", doc, {symbol: "Asterlyn"});
     assert.ok(result.items.length, "unsaved syntax diagnostics are empty");
     summary.checks.push({language, dirtyDiagnostics: result.items.length, version: doc.version, publishedCurrentVersion: diagnostics.some(item => item.uri === doc.uri && item.version === doc.version && item.count > 0)});
+    console.log(JSON.stringify({stage: "dirty-diagnostics-checked", ...summary.checks.at(-1)}));
     doc.text = original; doc.version++;
     peer.notify("textDocument/didChange", {textDocument: {uri: doc.uri, version: doc.version}, contentChanges: [{text: original}]});
   }

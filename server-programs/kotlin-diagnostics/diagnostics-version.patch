@@ -86,3 +86,20 @@ index d7bb849..3477769 100644
 +
      fun isIncluded(uri: URI): Boolean = exclusions.isURIIncluded(uri)
  }
+
+diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinLanguageServer.kt b/server/src/main/kotlin/org/javacs/kt/KotlinLanguageServer.kt
+index 0f8ab9c..0000000 100644
+--- a/server/src/main/kotlin/org/javacs/kt/KotlinLanguageServer.kt
++++ b/server/src/main/kotlin/org/javacs/kt/KotlinLanguageServer.kt
+@@ -134,6 +134,10 @@ class KotlinLanguageServer(
+         }
+         progress?.close()
+
+-        textDocuments.lintAll()
++        // Do not eagerly compile every source file on initialize. SourceFiles has
++        // already discovered the workspace, while didOpen/didChange lint only the
++        // documents the client is actively using. This preserves cross-file lookup
++        // without making a large Android workspace compile-all during startup.
++        LOG.info("Skipping eager workspace lint; waiting for opened documents")
+
+        val serverInfo = ServerInfo("Kotlin Language Server", VERSION)

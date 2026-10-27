@@ -118,3 +118,24 @@ options and local probe descriptions. It checks real definitions/hover/completio
 Java/Kotlin diagnostics, verifies source hashes remain unchanged, and records stages, timing and
 process-tree RSS. It never saves overlay edits to the business project. Probe configurations and
 raw local diagnostics are not committed.
+
+
+### 0.3.2 scoped startup analysis
+
+The 0.3.1 direct short probe did not establish long-running acceptance. The packaged adapter later
+hit the 2 GiB ceiling too: upstream initialization scheduled `lintAll()` → `compileAllFiles()`,
+resolving all closed-file bodies across the app's 25-module closure. That candidate was not installed
+or published. Raising the heap alone is insufficient.
+
+0.3.2 removes only initialization-time eager workspace lint from the pinned source patch. Source
+catalog/discovery and cross-file semantic lookup remain; didOpen/didChange still lint open documents
+with the previous text/version guards. Proactive closed-file diagnostics and full-workspace usage
+indexing are not claimed. The updated JAR is 480,821 bytes, SHA-256
+`26d0ec253d0bccb858f25ffb6603f2d42c9e8fbb94c850750194a036f86d53a8`.
+Two independent patch rebuilds and root's third rebuild match. URI decoding and version capture
+patches and the complete MIT license remain. A real boostCleaner probe waited 20 seconds idle,
+then Kotlin→common Java definition took 47 ms, hover passed, no OOM (22,771 ms total).
+
+Candidate 0.3.2: 5,074,033 bytes, SHA-256
+`de28333692faf4767701ac1cc4613ec724e138234a6de30aaab87ebc7751ab0f`.
+The final full packaged-project and installed gates remain in the host recovery record.

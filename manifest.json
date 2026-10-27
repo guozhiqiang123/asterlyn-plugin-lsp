@@ -2,7 +2,7 @@
   "schemaVersion": 3,
   "sdkMajor": 1,
   "id": "dev.asterlyn.lsp",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "nameKey": "name",
   "descriptionKey": "description",
   "localization": {

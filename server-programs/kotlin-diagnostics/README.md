@@ -13,7 +13,7 @@ older result to be discarded instead of being relabelled as current.
 The patched development JAR was built from the bundled Kotlin compiler 2.1.0 and the server's
 published libraries. This is a reproducible patch build of the complete upstream server JAR;
 it is not a claim that the complete upstream source tree was rebuilt. Its reproducible SHA-256 is
-`a9028fd6b3717303709dfe01e52eca450f5b6de5347ea626729d96a1e1314756` and its size is 480,831 bytes.
+`26d0ec253d0bccb858f25ffb6603f2d42c9e8fbb94c850750194a036f86d53a8` and its size is 480,821 bytes.
 The reproducible source changes are in `diagnostics-version.patch` and `uri-parsing.patch`.
 The URI patch preserves correctly encoded file URIs before trying the legacy decoding fallback;
 Chinese, percent signs, spaces and emoji no longer break initialization. The complete upstream
@@ -44,3 +44,9 @@ build receipt):
 ```text
 node build.mjs <fwcd-source> <distribution-root> <jdk-home> <output.jar> <distribution-manifest.json>
 ```
+
+The Android profile also removes initialization-time `lintAll()`/`compileAllFiles()` work.
+Workspace source discovery remains available for cross-file semantic resolution; didOpen/didChange
+continue to lint the exact open document and publish version-checked diagnostics. Closed-file
+workspace-wide diagnostics/index precompilation are not performed proactively. This prevents a large
+module closure from filling the JVM heap before a navigation request.

@@ -1,0 +1,1294 @@
+diff --git a/build.gradle.kts b/build.gradle.kts
+index e87cc59..fba24a2 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -1,5 +1,7 @@
+ import io.gitlab.arturbosch.detekt.Detekt
+ import io.gitlab.arturbosch.detekt.DetektCreateBaselineTask
++import org.gradle.api.tasks.bundling.AbstractArchiveTask
++import org.gradle.jvm.tasks.Jar
+ 
+ plugins {
+     kotlin("jvm")
+@@ -11,6 +13,18 @@ repositories {
+     mavenCentral()
+ }
+ 
++// Reproducible component archives for receipt verification.
++allprojects {
++    tasks.withType<AbstractArchiveTask>().configureEach {
++        setPreserveFileTimestamps(false)
++        setReproducibleFileOrder(true)
++    }
++    tasks.withType<Jar>().configureEach {
++        setPreserveFileTimestamps(false)
++        setReproducibleFileOrder(true)
++    }
++}
++
+ 
+ detekt {
+     allRules = false // activate all available (even unstable) rules.
+diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
+index 167e4e5..c522372 100644
+--- a/gradle/libs.versions.toml
++++ b/gradle/libs.versions.toml
+@@ -1,5 +1,5 @@
+ [versions]
+-kotlinVersion = "2.1.0"
++kotlinVersion = "2.3.21"
+ lsp4jVersion = "0.21.2"
+ exposedVersion = "0.37.3"
+ jmhVersion = "1.37"
+diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinLanguageServer.kt b/server/src/main/kotlin/org/javacs/kt/KotlinLanguageServer.kt
+index e8da0ff..494efd5 100644
+--- a/server/src/main/kotlin/org/javacs/kt/KotlinLanguageServer.kt
++++ b/server/src/main/kotlin/org/javacs/kt/KotlinLanguageServer.kt
+@@ -35,7 +35,7 @@ class KotlinLanguageServer(
+ 
+     private val textDocuments = KotlinTextDocumentService(sourceFiles, sourcePath, config, tempDirectory, uriContentProvider, classPath)
+     private val workspaces = KotlinWorkspaceService(sourceFiles, sourcePath, classPath, textDocuments, config)
+-    private val protocolExtensions = KotlinProtocolExtensionService(uriContentProvider, classPath, sourcePath)
++    private val protocolExtensions = KotlinProtocolExtensionService(uriContentProvider, classPath, sourcePath, textDocuments)
+ 
+     private lateinit var client: LanguageClient
+ 
+@@ -134,7 +134,9 @@ class KotlinLanguageServer(
+         }
+         progress?.close()
+ 
+-        textDocuments.lintAll()
++        // Do not eagerly compile every source file on initialize. Active documents
++        // are linted on demand; this keeps large Android workspaces responsive.
++        LOG.info("Skipping eager workspace lint; waiting for opened documents")
+ 
+         val serverInfo = ServerInfo("Kotlin Language Server", VERSION)
+ 
+diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
+index 76428a5..dbe70e5 100644
+--- a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
++++ b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
+@@ -12,7 +12,8 @@ import java.nio.file.Paths
+ class KotlinProtocolExtensionService(
+     private val uriContentProvider: URIContentProvider,
+     private val cp: CompilerClassPath,
+-    private val sp: SourcePath
++    private val sp: SourcePath,
++    private val textDocuments: KotlinTextDocumentService
+ ) : KotlinProtocolExtensions {
+     private val async = AsyncExecutor()
+ 
+@@ -49,4 +50,11 @@ class KotlinProtocolExtensionService(
+ 
+         listOverridableMembers(compiledFile, cursorOffset)
+     }
++
++    override fun asterlynDocumentDiagnostics(request: Map<String, Any?>): CompletableFuture<Map<String, Any?>> = async.compute {
++        val uri = request["uri"] as? String ?: throw IllegalArgumentException("uri is required")
++        val version = (request["version"] as? Number)?.toInt() ?: throw IllegalArgumentException("version is required")
++        val digest = request["digest"] as? String ?: throw IllegalArgumentException("digest is required")
++        textDocuments.documentDiagnostics(uri, version, digest)
++    }
+ }
+diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
+index b29c4b2..3db4c22 100644
+--- a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
++++ b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
+@@ -18,4 +18,8 @@ interface KotlinProtocolExtensions {
+ 
+     @JsonRequest
+     fun overrideMember(position: TextDocumentPositionParams): CompletableFuture<List<CodeAction>>
++
++    /** Version/digest-bound diagnostics pull for the host adapter. */
++    @JsonRequest
++    fun asterlynDocumentDiagnostics(request: Map<String, Any?>): CompletableFuture<Map<String, Any?>>
+ }
+diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinTextDocumentService.kt b/server/src/main/kotlin/org/javacs/kt/KotlinTextDocumentService.kt
+index 2ec1e52..dc7c2f6 100644
+--- a/server/src/main/kotlin/org/javacs/kt/KotlinTextDocumentService.kt
++++ b/server/src/main/kotlin/org/javacs/kt/KotlinTextDocumentService.kt
+@@ -34,6 +34,10 @@ import java.io.Closeable
+ import java.nio.file.Path
+ import java.time.Duration
+ import java.util.concurrent.CompletableFuture
++import java.security.MessageDigest
++import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
++import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
++import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+ 
+ class KotlinTextDocumentService(
+     private val sf: SourceFiles,
+@@ -302,31 +306,63 @@ class KotlinTextDocumentService(
+     private fun doLint(cancelCallback: () -> Boolean) {
+         LOG.info("Linting {}", describeURIs(lintTodo))
+         val files = clearLint()
++        // Keep the exact text/version observed before compilation. A later edit must never receive
++        // diagnostics produced for this older compiler snapshot.
++        val snapshots = files.mapNotNull { uri -> sf.snapshot(uri)?.let { uri to it } }.toMap()
++        val epoch = sp.semanticEpoch()
+         val context = sp.compileFiles(files)
+-        if (!cancelCallback.invoke()) {
+-            reportDiagnostics(files, context.diagnostics)
++        if (!cancelCallback.invoke() && sp.semanticEpoch() == epoch) {
++            reportDiagnostics(files, context.diagnostics, snapshots)
+         }
+         lintCount++
+     }
+ 
+-    private fun reportDiagnostics(compiled: Collection<URI>, kotlinDiagnostics: Diagnostics) {
++    /** Compile and return diagnostics only for the exact open snapshot requested by the host. */
++    fun documentDiagnostics(uriString: String, requestedVersion: Int, requestedDigest: String): Map<String, Any?> {
++        val uri = parseURI(uriString)
++        fun modified(message: String): Nothing = throw ResponseErrorException(
++            ResponseError(ResponseErrorCode.ContentModified, message, null)
++        )
++        val before = sf.snapshot(uri) ?: modified("Document is not open")
++        if (!sf.isOpen(uri) || before.version != requestedVersion) modified("Document version changed")
++        val actualDigest = "sha256:" + MessageDigest.getInstance("SHA-256")
++            .digest(before.content.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
++        if (actualDigest != requestedDigest) modified("Document digest changed")
++        val epochBefore = sp.semanticEpoch()
++        val context = sp.compileFiles(listOf(uri))
++        val after = sf.snapshot(uri)
++        if (after != before || sp.semanticEpoch() != epochBefore) modified("Document or dependency changed during diagnostics")
++        val items = context.diagnostics.flatMap(::convertDiagnostic)
++            .filter { it.first == uri && config.diagnostics.enabled && it.second.severity <= config.diagnostics.level }
++            .map { it.second }
++        return mapOf("version" to before.version, "digest" to actualDigest, "items" to items)
++    }
++
++    private fun reportDiagnostics(compiled: Collection<URI>, kotlinDiagnostics: Diagnostics, snapshots: Map<URI, SourceSnapshot>) {
+         val langServerDiagnostics = kotlinDiagnostics
+             .flatMap(::convertDiagnostic)
+             .filter { config.diagnostics.enabled && it.second.severity <= config.diagnostics.level }
+         val byFile = langServerDiagnostics.groupBy({ it.first }, { it.second })
+ 
+         for ((uri, diagnostics) in byFile) {
+-            if (sf.isOpen(uri)) {
+-                client.publishDiagnostics(PublishDiagnosticsParams(uri.toString(), diagnostics))
++            val expected = snapshots[uri]
++            val current = sf.snapshot(uri)
++            if (sf.isOpen(uri) && expected != null && current == expected) {
++                client.publishDiagnostics(PublishDiagnosticsParams(uri.toString(), diagnostics).apply {
++                    version = expected.version
++                })
+ 
+                 LOG.info("Reported {} diagnostics in {}", diagnostics.size, describeURI(uri))
+             }
+-            else LOG.info("Ignore {} diagnostics in {} because it's not open", diagnostics.size, describeURI(uri))
++            else LOG.info("Ignore {} diagnostics in {} because its source snapshot is stale or closed", diagnostics.size, describeURI(uri))
+         }
+ 
+-        val noErrors = compiled - byFile.keys
++        val noErrors = compiled.filter { uri ->
++            val expected = snapshots[uri]
++            expected != null && sf.snapshot(uri) == expected && uri !in byFile.keys
++        }
+         for (file in noErrors) {
+-            clearDiagnostics(file)
++            clearDiagnostics(file, snapshots[file]?.version)
+ 
+             LOG.info("No diagnostics in {}", file)
+         }
+@@ -334,8 +370,10 @@ class KotlinTextDocumentService(
+         lintCount++
+     }
+ 
+-    private fun clearDiagnostics(uri: URI) {
+-        client.publishDiagnostics(PublishDiagnosticsParams(uri.toString(), listOf()))
++    private fun clearDiagnostics(uri: URI, version: Int? = sf.snapshot(uri)?.version) {
++        client.publishDiagnostics(PublishDiagnosticsParams(uri.toString(), listOf()).apply {
++            this.version = version
++        })
+     }
+ 
+     private fun shutdownExecutors(awaitTermination: Boolean) {
+diff --git a/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt b/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt
+index d7bb849..3477769 100644
+--- a/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt
++++ b/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt
+@@ -23,6 +23,9 @@ import java.nio.file.Paths
+ 
+ private class SourceVersion(val content: String, val version: Int, val language: Language?, val isTemporary: Boolean)
+ 
++/** Immutable text/version pair used to reject diagnostics computed for an older overlay. */
++data class SourceSnapshot(val content: String, val version: Int)
++
+ /**
+  * Notify SourcePath whenever a file changes
+  */
+@@ -195,6 +198,8 @@ class SourceFiles(
+ 
+     fun isOpen(uri: URI): Boolean = (uri in open)
+ 
++    fun snapshot(uri: URI): SourceSnapshot? = files[uri]?.let { SourceSnapshot(it.content, it.version) }
++
+     fun isIncluded(uri: URI): Boolean = exclusions.isURIIncluded(uri)
+ }
+ 
+diff --git a/server/src/main/kotlin/org/javacs/kt/SourcePath.kt b/server/src/main/kotlin/org/javacs/kt/SourcePath.kt
+index dff7e0d..2695656 100644
+--- a/server/src/main/kotlin/org/javacs/kt/SourcePath.kt
++++ b/server/src/main/kotlin/org/javacs/kt/SourcePath.kt
+@@ -19,6 +19,10 @@ import java.nio.file.Path
+ import java.nio.file.Paths
+ import java.net.URI
+ import java.util.concurrent.locks.ReentrantLock
++import java.util.concurrent.atomic.AtomicLong
++import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
++import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
++import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+ 
+ class SourcePath(
+     private val cp: CompilerClassPath,
+@@ -27,6 +31,13 @@ class SourcePath(
+     private val databaseService: DatabaseService
+ ) {
+     private val files = mutableMapOf<URI, SourceFile>()
++    private val epoch = AtomicLong()
++    private val contentEpoch: Long get() = epoch.get()
++    private fun requireEpoch(expected: Long) {
++        if (contentEpoch != expected) throw ResponseErrorException(
++            ResponseError(ResponseErrorCode.ContentModified, "Semantic source context changed", null)
++        )
++    }
+     private val parseDataWriteLock = ReentrantLock()
+ 
+     private val indexAsync = AsyncExecutor()
+@@ -47,6 +58,7 @@ class SourcePath(
+         val path: Path? = uri.filePath,
+         var parsed: KtFile? = null,
+         var compiledFile: KtFile? = null,
++        var compiledEpoch: Long = -1,
+         var compiledContext: BindingContext? = null,
+         var module: ModuleDescriptor? = null,
+         val language: Language? = null,
+@@ -66,6 +78,7 @@ class SourcePath(
+         fun clean() {
+             parsed = null
+             compiledFile = null
++            compiledEpoch = -1
+             compiledContext = null
+             module = null
+         }
+@@ -84,7 +97,7 @@ class SourcePath(
+         fun compileIfNull() = parseIfChanged().apply { doCompileIfNull() }
+ 
+         private fun doCompileIfNull() {
+-            if (compiledFile == null) {
++            if (compiledFile == null || compiledEpoch != contentEpoch) {
+                 doCompileIfChanged()
+             }
+         }
+@@ -95,21 +108,24 @@ class SourcePath(
+ 
+         private fun doCompile() {
+             LOG.debug("Compiling {}", path?.fileName)
++            val compileEpoch = contentEpoch
+ 
+             val oldFile = clone()
+-
+-            val (context, module) = cp.compiler.compileKtFile(parsed!!, allIncludingThis(), kind)
++            val input = parsed!!
++            val (context, module) = cp.compiler.compileKtFile(input, allIncludingThis(), kind)
+             parseDataWriteLock.withLock {
++                requireEpoch(compileEpoch)
+                 compiledContext = context
+                 this.module = module
+-                compiledFile = parsed
++                compiledFile = input
++                compiledEpoch = compileEpoch
+             }
+ 
+             refreshWorkspaceIndexes(listOfNotNull(oldFile), listOfNotNull(this))
+         }
+ 
+         private fun doCompileIfChanged() {
+-            if (parsed?.text != compiledFile?.text) {
++            if (parsed?.text != compiledFile?.text || compiledEpoch != contentEpoch) {
+                 doCompile()
+             }
+         }
+@@ -126,7 +142,7 @@ class SourcePath(
+         }
+ 
+         // Creates a shallow copy
+-        fun clone(): SourceFile = SourceFile(uri, content, path, parsed, compiledFile, compiledContext, module, language, isTemporary)
++        fun clone(): SourceFile = SourceFile(uri, content, path, parsed, compiledFile, compiledEpoch, compiledContext, module, language, isTemporary)
+     }
+ 
+     private fun sourceFile(uri: URI): SourceFile {
+@@ -147,9 +163,15 @@ class SourcePath(
+         }
+ 
+         if (uri in files) {
+-            sourceFile(uri).put(content)
++            val file = sourceFile(uri)
++            if (file.content != content) {
++                file.put(content)
++                // Compiled bindings expire lazily; retain all unchanged files' parsed PSI.
++                epoch.incrementAndGet()
++            }
+         } else {
+             files[uri] = SourceFile(uri, content, language = language, isTemporary = temporary)
++            epoch.incrementAndGet()
+         }
+     }
+ 
+@@ -168,9 +190,12 @@ class SourcePath(
+             cp.compiler.removeGeneratedCode(listOfNotNull(it.lastSavedFile))
+         }
+ 
+-        files.remove(uri)
++        if (files.remove(uri) != null) epoch.incrementAndGet()
+     }
+ 
++    /** Monotonic semantic-source epoch, including dependency-file edits. */
++    fun semanticEpoch(): Long = contentEpoch
++
+     /**
+      * Get the latest content of a file
+      */
+@@ -194,9 +219,10 @@ class SourcePath(
+      * Compile changed files
+      */
+     fun compileFiles(all: Collection<URI>): BindingContext {
+-        // Figure out what has changed
++        val requestEpoch = contentEpoch
++        // Figure out what has changed, including semantic changes in dependencies.
+         val sources = all.map { files[it]!! }
+-        val allChanged = sources.filter { it.content != it.compiledFile?.text }
++        val allChanged = sources.filter { it.content != it.compiledFile?.text || it.compiledEpoch != requestEpoch }
+         val (changedBuildScripts, changedSources) = allChanged.partition { it.kind == CompilationKind.BUILD_SCRIPT }
+ 
+         // Compile changed files
+@@ -218,16 +244,19 @@ class SourcePath(
+             // Get all the files. This will parse them if they changed
+             val allFiles = all()
+             beforeCompileCallback.invoke()
++            requireEpoch(requestEpoch)
+             val (context, module) = cp.compiler.compileKtFiles(parse.values, allFiles, kind)
+ 
+             // Update cache
+             for ((f, parsed) in parse) {
+                 parseDataWriteLock.withLock {
++                    requireEpoch(requestEpoch)
+                     if (f.parsed == parsed) {
+                         //only updated if the parsed file didn't change:
+                         f.compiledFile = parsed
+                         f.compiledContext = context
+                         f.module = module
++                        f.compiledEpoch = requestEpoch
+                     }
+                 }
+             }
+@@ -247,6 +276,7 @@ class SourcePath(
+         val same = sources - allChanged
+         val combined = listOf(buildScriptsContext, sourcesContext).filterNotNull() + same.map { it.compiledContext!! }
+ 
++        requireEpoch(requestEpoch)
+         return CompositeBindingContext.create(combined)
+     }
+ 
+@@ -339,11 +369,10 @@ class SourcePath(
+      * Recompiles all source files that are initialized.
+      */
+     fun refresh() {
+-        val initialized = files.values.any { it.parsed != null }
+-        if (initialized) {
+-            LOG.info("Refreshing source path")
++        epoch.incrementAndGet()
++        if (files.values.any { it.parsed != null }) {
++            LOG.info("Invalidating source path; compilation is deferred until a document is requested")
+             files.values.forEach { it.clean() }
+-            files.values.forEach { it.compile() }
+         }
+     }
+ 
+diff --git a/server/src/main/kotlin/org/javacs/kt/compiler/Compiler.kt b/server/src/main/kotlin/org/javacs/kt/compiler/Compiler.kt
+index 585ee6d..3fabe10 100644
+--- a/server/src/main/kotlin/org/javacs/kt/compiler/Compiler.kt
++++ b/server/src/main/kotlin/org/javacs/kt/compiler/Compiler.kt
+@@ -1,5 +1,5 @@
+-@file:OptIn(ExperimentalCompilerApi::class)
+-@file:Suppress("DEPRECATION")
++@file:OptIn(org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi::class, org.jetbrains.kotlin.K1Deprecation::class)
++@file:Suppress("UNUSED_PARAMETER", "UNUSED_VARIABLE")
+ 
+ package org.javacs.kt.compiler
+ 
+@@ -10,619 +10,168 @@ import com.intellij.openapi.vfs.VirtualFileManager
+ import com.intellij.openapi.vfs.VirtualFileSystem
+ import com.intellij.psi.PsiFile
+ import com.intellij.psi.PsiFileFactory
++import org.javacs.kt.CodegenConfiguration
++import org.javacs.kt.CompilerConfiguration
++import org.javacs.kt.ScriptsConfiguration
++import org.javacs.kt.util.KotlinLSException
+ import org.jetbrains.kotlin.cli.common.CLIConfigurationKeys
+ import org.jetbrains.kotlin.cli.common.environment.setIdeaIoUseFallback
++import org.jetbrains.kotlin.cli.jvm.compiler.CliBindingTrace
++import org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles
++import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
++import org.jetbrains.kotlin.cli.jvm.compiler.TopDownAnalyzerFacadeForJVM
+ import org.jetbrains.kotlin.cli.jvm.config.addJavaSourceRoots
+ import org.jetbrains.kotlin.cli.jvm.config.addJvmClasspathRoots
++import org.jetbrains.kotlin.cli.jvm.config.configureJdkClasspathRoots
+ import org.jetbrains.kotlin.config.CommonConfigurationKeys
+ import org.jetbrains.kotlin.config.CompilerConfiguration as KotlinCompilerConfiguration
++import org.jetbrains.kotlin.config.JVMConfigurationKeys
++import org.jetbrains.kotlin.config.JvmTarget
++import org.jetbrains.kotlin.config.LanguageFeature
++import org.jetbrains.kotlin.config.LanguageVersion
++import org.jetbrains.kotlin.config.LanguageVersionSettingsImpl
+ import org.jetbrains.kotlin.container.ComponentProvider
+ import org.jetbrains.kotlin.container.get
+-import org.jetbrains.kotlin.compiler.plugin.ComponentRegistrar
++import org.jetbrains.kotlin.container.getService
++import org.jetbrains.kotlin.descriptors.ModuleDescriptor
+ import org.jetbrains.kotlin.idea.KotlinLanguage
+ import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmProtoBufUtil
+-import org.jetbrains.kotlin.psi.*
++import org.jetbrains.kotlin.psi.KtDeclaration
++import org.jetbrains.kotlin.psi.KtExpression
++import org.jetbrains.kotlin.psi.KtFile
++import org.jetbrains.kotlin.psi.KtPsiFactory
+ import org.jetbrains.kotlin.resolve.BindingContext
+ import org.jetbrains.kotlin.resolve.BindingTraceContext
+ import org.jetbrains.kotlin.resolve.LazyTopDownAnalyzer
+ import org.jetbrains.kotlin.resolve.TopDownAnalysisMode
++import org.jetbrains.kotlin.resolve.TargetEnvironment
+ import org.jetbrains.kotlin.resolve.calls.components.InferenceSession
+ import org.jetbrains.kotlin.resolve.calls.smartcasts.DataFlowInfo
+ import org.jetbrains.kotlin.resolve.lazy.declarations.FileBasedDeclarationProviderFactory
+-import org.jetbrains.kotlin.scripting.compiler.plugin.ScriptingCompilerConfigurationComponentRegistrar
+-import org.jetbrains.kotlin.scripting.compiler.plugin.definitions.CliScriptDefinitionProvider
+-import org.jetbrains.kotlin.scripting.configuration.ScriptingConfigurationKeys
+-import org.jetbrains.kotlin.scripting.definitions.ScriptDefinitionProvider
+-import org.jetbrains.kotlin.scripting.definitions.ScriptDefinition
+-import org.jetbrains.kotlin.scripting.definitions.KotlinScriptDefinition // Legacy
+-import org.jetbrains.kotlin.scripting.definitions.findScriptDefinition
+-import org.jetbrains.kotlin.scripting.definitions.getEnvironment
+-import org.jetbrains.kotlin.scripting.resolve.KotlinScriptDefinitionFromAnnotatedTemplate
+ import org.jetbrains.kotlin.types.TypeUtils
+ import org.jetbrains.kotlin.types.expressions.ExpressionTypingServices
++import com.intellij.psi.search.GlobalSearchScope
++import org.jetbrains.kotlin.container.StorageComponentContainer
++import org.jetbrains.kotlin.container.registerSingleton
++import org.jetbrains.kotlin.resolve.lazy.BasicAbsentDescriptorHandler
++import org.jetbrains.kotlin.resolve.lazy.CompilerLocalDescriptorResolver
++import org.jetbrains.kotlin.idea.MainFunctionDetector
++import org.jetbrains.kotlin.resolve.BodyResolveCache
++import org.jetbrains.kotlin.cfg.ControlFlowInformationProviderImpl
+ import org.jetbrains.kotlin.util.KotlinFrontEndException
+ import java.io.Closeable
++import java.io.File
+ import java.nio.file.Path
+ import java.nio.file.Paths
+-import java.net.URLClassLoader
++import java.lang.reflect.Method
+ import java.util.concurrent.locks.ReentrantLock
+ import kotlin.concurrent.withLock
+-import kotlin.script.dependencies.Environment
+-import kotlin.script.dependencies.ScriptContents
+-import kotlin.script.experimental.dependencies.ScriptDependencies
+-import kotlin.script.experimental.dependencies.DependenciesResolver
+-import kotlin.script.experimental.dependencies.DependenciesResolver.ResolveResult
+-import kotlin.script.experimental.host.ScriptingHostConfiguration
+-import kotlin.script.experimental.host.configurationDependencies
+-import kotlin.script.experimental.jvm.defaultJvmScriptingHostConfiguration
+-import kotlin.script.experimental.jvm.JvmDependency
+-import org.javacs.kt.LOG
+-import org.javacs.kt.CodegenConfiguration
+-import org.javacs.kt.CompilerConfiguration
+-import org.javacs.kt.ScriptsConfiguration
+-import org.javacs.kt.util.KotlinLSException
+-import org.javacs.kt.util.LoggingMessageCollector
+-import org.jetbrains.kotlin.cli.common.output.writeAllTo
+-import org.jetbrains.kotlin.codegen.ClassBuilderFactories
+-import org.jetbrains.kotlin.codegen.KotlinCodegenFacade
+-import org.jetbrains.kotlin.codegen.state.GenerationState
+-import org.jetbrains.kotlin.container.getService
+-import org.jetbrains.kotlin.descriptors.ModuleDescriptor
+-import org.jetbrains.kotlin.cli.jvm.compiler.CliBindingTrace
+-import org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles
+-import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
+-import org.jetbrains.kotlin.cli.jvm.compiler.TopDownAnalyzerFacadeForJVM
+-import org.jetbrains.kotlin.cli.jvm.config.configureJdkClasspathRoots
+-import org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi
+-import org.jetbrains.kotlin.config.*
+-import org.jetbrains.kotlin.resolve.scopes.LexicalScope
+-import org.jetbrains.kotlin.samWithReceiver.CliSamWithReceiverComponentContributor
+-import org.jetbrains.kotlin.extensions.StorageComponentContainerContributor
+-import java.io.File
+ 
+-private val GRADLE_DSL_DEPENDENCY_PATTERN = Regex("^gradle-(?:kotlin-dsl|core).*\\.jar$")
+-
+-/**
+- * Kotlin compiler APIs used to parse, analyze and compile
+- * files and expressions.
+- */
+-private class CompilationEnvironment(
+-    javaSourcePath: Set<Path>,
+-    classPath: Set<Path>,
+-    scriptsConfig: ScriptsConfiguration
+-) : Closeable {
++/** Android profile: Kotlin source PSI and K1 analysis only. Gradle scripts and JVM codegen are unsupported. */
++private class CompilationEnvironment(javaSourcePath: Set<Path>, classPath: Set<Path>) : Closeable {
+     private val disposable = Disposer.newDisposable()
+-
+     val environment: KotlinCoreEnvironment
+-    val parser: KtPsiFactory
+-    val scripts: ScriptDefinitionProvider
+-
++    private val targetEnvironment = object : TargetEnvironment("asterlyn-android") {
++        override fun configure(container: StorageComponentContainer) {
++            container.registerSingleton(BasicAbsentDescriptorHandler::class.java)
++            container.registerSingleton(CompilerLocalDescriptorResolver::class.java)
++            container.registerSingleton(MainFunctionDetector.Factory.Ordinary::class.java)
++            Class.forName("org.jetbrains.kotlin.container.DslKt")
++                .getMethod("useInstance", StorageComponentContainer::class.java, Any::class.java)
++                .invoke(null, container, BodyResolveCache.ThrowException)
++            Class.forName("org.jetbrains.kotlin.container.DslKt")
++                .getMethod("useInstance", StorageComponentContainer::class.java, Any::class.java)
++                .invoke(null, container, ControlFlowInformationProviderImpl.Factory)
++        }
++    }
+     init {
+-        environment = KotlinCoreEnvironment.createForProduction(
+-            projectDisposable = disposable,
+-            // Not to be confused with the CompilerConfiguration in the language server Configuration
+-            configuration = KotlinCompilerConfiguration().apply {
+-                val langFeatures = mutableMapOf<LanguageFeature, LanguageFeature.State>()
+-                for (langFeature in LanguageFeature.values()) {
+-                    langFeatures[langFeature] = LanguageFeature.State.ENABLED
+-                }
+-                val languageVersionSettings = LanguageVersionSettingsImpl(
+-                    LanguageVersion.LATEST_STABLE,
+-                    ApiVersion.createByLanguageVersion(LanguageVersion.LATEST_STABLE),
+-                    emptyMap(),
+-                    langFeatures
+-                )
+-
+-                put(CommonConfigurationKeys.MODULE_NAME, JvmProtoBufUtil.DEFAULT_MODULE_NAME)
+-                put(CommonConfigurationKeys.LANGUAGE_VERSION_SETTINGS, languageVersionSettings)
+-                put(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY, LoggingMessageCollector)
+-                add(ComponentRegistrar.PLUGIN_COMPONENT_REGISTRARS, ScriptingCompilerConfigurationComponentRegistrar())
+-                put(JVMConfigurationKeys.USE_PSI_CLASS_FILES_READING, true)
+-
+-                // configure jvm runtime classpaths
+-                configureJdkClasspathRoots()
+-
+-                // Kotlin 1.8.20 requires us to specify the JDK home, otherwise java.* classes won't resolve
+-                // See https://github.com/JetBrains/kotlin-compiler-server/pull/626
+-                val jdkHome = File(System.getProperty("java.home"))
+-                put(JVMConfigurationKeys.JDK_HOME, jdkHome)
+-
+-                addJvmClasspathRoots(classPath.map { it.toFile() })
+-                addJavaSourceRoots(javaSourcePath.map { it.toFile() })
+-
+-                if (scriptsConfig.enabled) {
+-                    // Setup script templates (e.g. used by Gradle's Kotlin DSL)
+-                    val scriptDefinitions: MutableList<ScriptDefinition> = mutableListOf(ScriptDefinition.getDefault(defaultJvmScriptingHostConfiguration))
+-
+-                    val foundDSLDependency = classPath.any { GRADLE_DSL_DEPENDENCY_PATTERN.matches(it.fileName.toString()) }
+-                    if (scriptsConfig.buildScriptsEnabled && foundDSLDependency) {
+-                        LOG.info("Configuring Kotlin DSL script templates...")
+-
+-                        val scriptTemplates = listOf(
+-                            "org.gradle.kotlin.dsl.KotlinInitScript",
+-                            "org.gradle.kotlin.dsl.KotlinSettingsScript",
+-                            "org.gradle.kotlin.dsl.KotlinBuildScript"
+-                        )
+-
+-                        try {
+-                            // Load template classes
+-                            val scriptClassLoader = URLClassLoader(classPath.map { it.toUri().toURL() }.toTypedArray())
+-                            val fileClassPath = classPath.map { it.toFile() }
+-                            val scriptHostConfig = ScriptingHostConfiguration(defaultJvmScriptingHostConfiguration) {
+-                                configurationDependencies(JvmDependency(fileClassPath))
+-                            }
+-                            // TODO: KotlinScriptDefinition will soon be deprecated, use
+-                            //       ScriptDefinition.compilationConfiguration and its defaultImports instead
+-                            //       of KotlinScriptDefinition.dependencyResolver
+-                            // TODO: Use ScriptDefinition.FromLegacyTemplate directly if possible
+-                            // scriptDefinitions = scriptTemplates.map { ScriptDefinition.FromLegacyTemplate(scriptHostConfig, scriptClassLoader.loadClass(it).kotlin) }
+-                            scriptDefinitions.addAll(scriptTemplates.map { ScriptDefinition.FromLegacy(scriptHostConfig, object : KotlinScriptDefinitionFromAnnotatedTemplate(
+-                                scriptClassLoader.loadClass(it).kotlin,
+-                                scriptHostConfig[ScriptingHostConfiguration.getEnvironment]?.invoke()
+-                            ) {
+-                                override fun isScript(fileName: String): Boolean {
+-                                    // The pattern for KotlinSettingsScript doesn't seem to work well, so kinda "forcing it" for settings.gradle.kts files
+-                                    if (this.template.simpleName == "KotlinSettingsScript" && fileName.endsWith("settings.gradle.kts")) {
+-                                        return true
+-                                    }
+-
+-                                    return super.isScript(fileName)
+-                                }
+-
+-                                override val dependencyResolver: DependenciesResolver = object : DependenciesResolver {
+-                                    override fun resolve(scriptContents: ScriptContents, environment: Environment) = ResolveResult.Success(ScriptDependencies(
+-                                        imports = listOf(
+-                                            "org.gradle.kotlin.dsl.*",
+-                                            "org.gradle.kotlin.dsl.plugins.dsl.*",
+-                                            "org.gradle.*",
+-                                            "org.gradle.api.*",
+-                                            "org.gradle.api.artifacts.*",
+-                                            "org.gradle.api.artifacts.component.*",
+-                                            "org.gradle.api.artifacts.dsl.*",
+-                                            "org.gradle.api.artifacts.ivy.*",
+-                                            "org.gradle.api.artifacts.maven.*",
+-                                            "org.gradle.api.artifacts.query.*",
+-                                            "org.gradle.api.artifacts.repositories.*",
+-                                            "org.gradle.api.artifacts.result.*",
+-                                            "org.gradle.api.artifacts.transform.*",
+-                                            "org.gradle.api.artifacts.type.*",
+-                                            "org.gradle.api.artifacts.verification.*",
+-                                            "org.gradle.api.attributes.*",
+-                                            "org.gradle.api.attributes.java.*",
+-                                            "org.gradle.api.capabilities.*",
+-                                            "org.gradle.api.component.*",
+-                                            "org.gradle.api.credentials.*",
+-                                            "org.gradle.api.distribution.*",
+-                                            "org.gradle.api.distribution.plugins.*",
+-                                            "org.gradle.api.execution.*",
+-                                            "org.gradle.api.file.*",
+-                                            "org.gradle.api.initialization.*",
+-                                            "org.gradle.api.initialization.definition.*",
+-                                            "org.gradle.api.initialization.dsl.*",
+-                                            "org.gradle.api.invocation.*",
+-                                            "org.gradle.api.java.archives.*",
+-                                            "org.gradle.api.jvm.*",
+-                                            "org.gradle.api.logging.*",
+-                                            "org.gradle.api.logging.configuration.*",
+-                                            "org.gradle.api.model.*",
+-                                            "org.gradle.api.plugins.*",
+-                                            "org.gradle.api.plugins.antlr.*",
+-                                            "org.gradle.api.plugins.quality.*",
+-                                            "org.gradle.api.plugins.scala.*",
+-                                            "org.gradle.api.provider.*",
+-                                            "org.gradle.api.publish.*",
+-                                            "org.gradle.api.publish.ivy.*",
+-                                            "org.gradle.api.publish.ivy.plugins.*",
+-                                            "org.gradle.api.publish.ivy.tasks.*",
+-                                            "org.gradle.api.publish.maven.*",
+-                                            "org.gradle.api.publish.maven.plugins.*",
+-                                            "org.gradle.api.publish.maven.tasks.*",
+-                                            "org.gradle.api.publish.plugins.*",
+-                                            "org.gradle.api.publish.tasks.*",
+-                                            "org.gradle.api.reflect.*",
+-                                            "org.gradle.api.reporting.*",
+-                                            "org.gradle.api.reporting.components.*",
+-                                            "org.gradle.api.reporting.dependencies.*",
+-                                            "org.gradle.api.reporting.dependents.*",
+-                                            "org.gradle.api.reporting.model.*",
+-                                            "org.gradle.api.reporting.plugins.*",
+-                                            "org.gradle.api.resources.*",
+-                                            "org.gradle.api.services.*",
+-                                            "org.gradle.api.specs.*",
+-                                            "org.gradle.api.tasks.*",
+-                                            "org.gradle.api.tasks.ant.*",
+-                                            "org.gradle.api.tasks.application.*",
+-                                            "org.gradle.api.tasks.bundling.*",
+-                                            "org.gradle.api.tasks.compile.*",
+-                                            "org.gradle.api.tasks.diagnostics.*",
+-                                            "org.gradle.api.tasks.incremental.*",
+-                                            "org.gradle.api.tasks.javadoc.*",
+-                                            "org.gradle.api.tasks.options.*",
+-                                            "org.gradle.api.tasks.scala.*",
+-                                            "org.gradle.api.tasks.testing.*",
+-                                            "org.gradle.api.tasks.testing.junit.*",
+-                                            "org.gradle.api.tasks.testing.junitplatform.*",
+-                                            "org.gradle.api.tasks.testing.testng.*",
+-                                            "org.gradle.api.tasks.util.*",
+-                                            "org.gradle.api.tasks.wrapper.*",
+-                                            "org.gradle.authentication.*",
+-                                            "org.gradle.authentication.aws.*",
+-                                            "org.gradle.authentication.http.*",
+-                                            "org.gradle.build.event.*",
+-                                            "org.gradle.buildinit.plugins.*",
+-                                            "org.gradle.buildinit.tasks.*",
+-                                            "org.gradle.caching.*",
+-                                            "org.gradle.caching.configuration.*",
+-                                            "org.gradle.caching.http.*",
+-                                            "org.gradle.caching.local.*",
+-                                            "org.gradle.concurrent.*",
+-                                            "org.gradle.external.javadoc.*",
+-                                            "org.gradle.ide.visualstudio.*",
+-                                            "org.gradle.ide.visualstudio.plugins.*",
+-                                            "org.gradle.ide.visualstudio.tasks.*",
+-                                            "org.gradle.ide.xcode.*",
+-                                            "org.gradle.ide.xcode.plugins.*",
+-                                            "org.gradle.ide.xcode.tasks.*",
+-                                            "org.gradle.ivy.*",
+-                                            "org.gradle.jvm.*",
+-                                            "org.gradle.jvm.application.scripts.*",
+-                                            "org.gradle.jvm.application.tasks.*",
+-                                            "org.gradle.jvm.platform.*",
+-                                            "org.gradle.jvm.plugins.*",
+-                                            "org.gradle.jvm.tasks.*",
+-                                            "org.gradle.jvm.tasks.api.*",
+-                                            "org.gradle.jvm.test.*",
+-                                            "org.gradle.jvm.toolchain.*",
+-                                            "org.gradle.language.*",
+-                                            "org.gradle.language.assembler.*",
+-                                            "org.gradle.language.assembler.plugins.*",
+-                                            "org.gradle.language.assembler.tasks.*",
+-                                            "org.gradle.language.base.*",
+-                                            "org.gradle.language.base.artifact.*",
+-                                            "org.gradle.language.base.compile.*",
+-                                            "org.gradle.language.base.plugins.*",
+-                                            "org.gradle.language.base.sources.*",
+-                                            "org.gradle.language.c.*",
+-                                            "org.gradle.language.c.plugins.*",
+-                                            "org.gradle.language.c.tasks.*",
+-                                            "org.gradle.language.coffeescript.*",
+-                                            "org.gradle.language.cpp.*",
+-                                            "org.gradle.language.cpp.plugins.*",
+-                                            "org.gradle.language.cpp.tasks.*",
+-                                            "org.gradle.language.java.*",
+-                                            "org.gradle.language.java.artifact.*",
+-                                            "org.gradle.language.java.plugins.*",
+-                                            "org.gradle.language.java.tasks.*",
+-                                            "org.gradle.language.javascript.*",
+-                                            "org.gradle.language.jvm.*",
+-                                            "org.gradle.language.jvm.plugins.*",
+-                                            "org.gradle.language.jvm.tasks.*",
+-                                            "org.gradle.language.nativeplatform.*",
+-                                            "org.gradle.language.nativeplatform.tasks.*",
+-                                            "org.gradle.language.objectivec.*",
+-                                            "org.gradle.language.objectivec.plugins.*",
+-                                            "org.gradle.language.objectivec.tasks.*",
+-                                            "org.gradle.language.objectivecpp.*",
+-                                            "org.gradle.language.objectivecpp.plugins.*",
+-                                            "org.gradle.language.objectivecpp.tasks.*",
+-                                            "org.gradle.language.plugins.*",
+-                                            "org.gradle.language.rc.*",
+-                                            "org.gradle.language.rc.plugins.*",
+-                                            "org.gradle.language.rc.tasks.*",
+-                                            "org.gradle.language.routes.*",
+-                                            "org.gradle.language.scala.*",
+-                                            "org.gradle.language.scala.plugins.*",
+-                                            "org.gradle.language.scala.tasks.*",
+-                                            "org.gradle.language.scala.toolchain.*",
+-                                            "org.gradle.language.swift.*",
+-                                            "org.gradle.language.swift.plugins.*",
+-                                            "org.gradle.language.swift.tasks.*",
+-                                            "org.gradle.language.twirl.*",
+-                                            "org.gradle.maven.*",
+-                                            "org.gradle.model.*",
+-                                            "org.gradle.nativeplatform.*",
+-                                            "org.gradle.nativeplatform.platform.*",
+-                                            "org.gradle.nativeplatform.plugins.*",
+-                                            "org.gradle.nativeplatform.tasks.*",
+-                                            "org.gradle.nativeplatform.test.*",
+-                                            "org.gradle.nativeplatform.test.cpp.*",
+-                                            "org.gradle.nativeplatform.test.cpp.plugins.*",
+-                                            "org.gradle.nativeplatform.test.cunit.*",
+-                                            "org.gradle.nativeplatform.test.cunit.plugins.*",
+-                                            "org.gradle.nativeplatform.test.cunit.tasks.*",
+-                                            "org.gradle.nativeplatform.test.googletest.*",
+-                                            "org.gradle.nativeplatform.test.googletest.plugins.*",
+-                                            "org.gradle.nativeplatform.test.plugins.*",
+-                                            "org.gradle.nativeplatform.test.tasks.*",
+-                                            "org.gradle.nativeplatform.test.xctest.*",
+-                                            "org.gradle.nativeplatform.test.xctest.plugins.*",
+-                                            "org.gradle.nativeplatform.test.xctest.tasks.*",
+-                                            "org.gradle.nativeplatform.toolchain.*",
+-                                            "org.gradle.nativeplatform.toolchain.plugins.*",
+-                                            "org.gradle.normalization.*",
+-                                            "org.gradle.platform.base.*",
+-                                            "org.gradle.platform.base.binary.*",
+-                                            "org.gradle.platform.base.component.*",
+-                                            "org.gradle.platform.base.plugins.*",
+-                                            "org.gradle.play.*",
+-                                            "org.gradle.play.distribution.*",
+-                                            "org.gradle.play.platform.*",
+-                                            "org.gradle.play.plugins.*",
+-                                            "org.gradle.play.plugins.ide.*",
+-                                            "org.gradle.play.tasks.*",
+-                                            "org.gradle.play.toolchain.*",
+-                                            "org.gradle.plugin.devel.*",
+-                                            "org.gradle.plugin.devel.plugins.*",
+-                                            "org.gradle.plugin.devel.tasks.*",
+-                                            "org.gradle.plugin.management.*",
+-                                            "org.gradle.plugin.use.*",
+-                                            "org.gradle.plugins.ear.*",
+-                                            "org.gradle.plugins.ear.descriptor.*",
+-                                            "org.gradle.plugins.ide.*",
+-                                            "org.gradle.plugins.ide.api.*",
+-                                            "org.gradle.plugins.ide.eclipse.*",
+-                                            "org.gradle.plugins.ide.idea.*",
+-                                            "org.gradle.plugins.javascript.base.*",
+-                                            "org.gradle.plugins.javascript.coffeescript.*",
+-                                            "org.gradle.plugins.javascript.envjs.*",
+-                                            "org.gradle.plugins.javascript.envjs.browser.*",
+-                                            "org.gradle.plugins.javascript.envjs.http.*",
+-                                            "org.gradle.plugins.javascript.envjs.http.simple.*",
+-                                            "org.gradle.plugins.javascript.jshint.*",
+-                                            "org.gradle.plugins.javascript.rhino.*",
+-                                            "org.gradle.plugins.signing.*",
+-                                            "org.gradle.plugins.signing.signatory.*",
+-                                            "org.gradle.plugins.signing.signatory.pgp.*",
+-                                            "org.gradle.plugins.signing.type.*",
+-                                            "org.gradle.plugins.signing.type.pgp.*",
+-                                            "org.gradle.process.*",
+-                                            "org.gradle.swiftpm.*",
+-                                            "org.gradle.swiftpm.plugins.*",
+-                                            "org.gradle.swiftpm.tasks.*",
+-                                            "org.gradle.testing.base.*",
+-                                            "org.gradle.testing.base.plugins.*",
+-                                            "org.gradle.testing.jacoco.plugins.*",
+-                                            "org.gradle.testing.jacoco.tasks.*",
+-                                            "org.gradle.testing.jacoco.tasks.rules.*",
+-                                            "org.gradle.testkit.runner.*",
+-                                            "org.gradle.vcs.*",
+-                                            "org.gradle.vcs.git.*",
+-                                            "org.gradle.work.*",
+-                                            "org.gradle.workers.*"
+-                                        )
+-                                    ))
+-                                }
+-                            }) })
+-                        } catch (e: Exception) {
+-                            LOG.error("Error while loading script template classes")
+-                            LOG.printStackTrace(e)
+-                        }
+-                    }
+-
+-                    LOG.info("Adding script definitions ${scriptDefinitions.map { it.asLegacyOrNull<KotlinScriptDefinition>()?.template?.simpleName }}")
+-                    addAll(ScriptingConfigurationKeys.SCRIPT_DEFINITIONS, scriptDefinitions)
+-                }
+-            },
+-            configFiles = EnvironmentConfigFiles.JVM_CONFIG_FILES
+-        )
+-
+-        // hacky way to support SamWithReceiverAnnotations for scripts
+-        val scriptDefinitions: List<ScriptDefinition> = environment.configuration.getList(ScriptingConfigurationKeys.SCRIPT_DEFINITIONS)
+-        scriptDefinitions.takeIf { it.isNotEmpty() }?.let {
+-            val annotations = scriptDefinitions.flatMap { it.asLegacyOrNull<KotlinScriptDefinition>()?.annotationsForSamWithReceivers ?: emptyList() }
+-            StorageComponentContainerContributor.registerExtension(environment.project, CliSamWithReceiverComponentContributor(annotations))
++        val configuration = KotlinCompilerConfiguration().apply {
++            put(CommonConfigurationKeys.MODULE_NAME, JvmProtoBufUtil.DEFAULT_MODULE_NAME)
++            put(CommonConfigurationKeys.LANGUAGE_VERSION_SETTINGS, LanguageVersionSettingsImpl(
++                LanguageVersion.LATEST_STABLE,
++                org.jetbrains.kotlin.config.ApiVersion.createByLanguageVersion(LanguageVersion.LATEST_STABLE),
++                emptyMap(),
++            ))
++            put(CommonConfigurationKeys.MESSAGE_COLLECTOR_KEY, org.javacs.kt.util.LoggingMessageCollector)
++            put(JVMConfigurationKeys.USE_PSI_CLASS_FILES_READING, true)
++            configureJdkClasspathRoots()
++            put(JVMConfigurationKeys.JDK_HOME, File(System.getProperty("java.home")))
++            addJvmClasspathRoots(classPath.map(Path::toFile))
++            addJavaSourceRoots(javaSourcePath.map(Path::toFile))
+         }
+-        val project = environment.project
+-        parser = KtPsiFactory(project)
+-        scripts = ScriptDefinitionProvider.getInstance(project)!! as CliScriptDefinitionProvider
++        environment = KotlinCoreEnvironment.createForProduction(disposable, configuration, EnvironmentConfigFiles.JVM_CONFIG_FILES)
+     }
+-
+     fun updateConfiguration(config: CompilerConfiguration) {
+-        JvmTarget.fromString(config.jvm.target)
+-            ?.let { environment.configuration.put(JVMConfigurationKeys.JVM_TARGET, it) }
++        JvmTarget.fromString(config.jvm.target)?.let { environment.configuration.put(JVMConfigurationKeys.JVM_TARGET, it) }
+     }
+-
++    @Suppress("DEPRECATION", "K1_DEPRECATION")
+     fun createContainer(sourcePath: Collection<KtFile>): Pair<ComponentProvider, BindingTraceContext> {
+         val trace = CliBindingTrace(environment.project)
+-        val container = TopDownAnalyzerFacadeForJVM.createContainer(
+-            project = environment.project,
+-            files = sourcePath,
+-            trace = trace,
+-            configuration = environment.configuration,
+-            packagePartProvider = environment::createPackagePartProvider,
+-            // TODO FileBasedDeclarationProviderFactory keeps indices, re-use it across calls
+-            declarationProviderFactory = ::FileBasedDeclarationProviderFactory
+-        )
+-        return Pair(container, trace)
+-    }
+-
+-    override fun close() {
+-        Disposer.dispose(disposable)
+-    }
++        // Kotlin 2.3 marks the K1 entry point as ERROR-level deprecated. Keep the
++        // Android profile on K1, but invoke the stable binary entry point through
++        // reflection so the adapter can be rebuilt while migration is isolated.
++        // Kotlin 2.3.21's stable binary signature is the 13-argument overload;
++        // keep this reflection boundary explicit because the source API is K1-deprecated.
++        val method = TopDownAnalyzerFacadeForJVM::class.java.methods.first {
++            it.name == "createContainer" && it.parameterTypes.size == 13
++        }
++        val container = method.invoke(
++            TopDownAnalyzerFacadeForJVM,
++            environment.project, sourcePath, trace, environment.configuration,
++            environment::createPackagePartProvider, ::FileBasedDeclarationProviderFactory,
++            targetEnvironment, GlobalSearchScope.EMPTY_SCOPE, emptyList<Any>(), null,
++            emptyList<Any>(), emptyList<Any>(), emptyMap<Any, Any>(),
++        ) as ComponentProvider
++        return container to trace
++    }
++    override fun close() = Disposer.dispose(disposable)
+ }
+ 
+-/**
+- * Determines the compilation environment used
+- * by the compiler (and thus the class path).
+- */
+-enum class CompilationKind {
+-    /** Uses the default class path. */
+-    DEFAULT,
+-    /** Uses the Kotlin DSL class path if available. */
+-    BUILD_SCRIPT
+-}
++enum class CompilationKind { DEFAULT, BUILD_SCRIPT }
+ 
+-/**
+- * Incrementally compiles files and expressions.
+- * The basic strategy for compiling one file at-a-time is outlined in OneFilePerformance.
+- */
+ class Compiler(
+-    javaSourcePath: Set<Path>,
+-    classPath: Set<Path>,
+-    buildScriptClassPath: Set<Path> = emptySet(),
+-    scriptsConfig: ScriptsConfiguration,
+-    private val codegenConfig: CodegenConfiguration,
++    javaSourcePath: Set<Path>, classPath: Set<Path>, buildScriptClassPath: Set<Path> = emptySet(),
++    scriptsConfig: ScriptsConfiguration, private val codegenConfig: CodegenConfiguration,
+     private val outputDirectory: File,
+ ) : Closeable {
+     private var closed = false
+     private val localFileSystem: VirtualFileSystem
+-
+-    private val defaultCompileEnvironment = CompilationEnvironment(javaSourcePath, classPath, scriptsConfig)
+-    private val buildScriptCompileEnvironment = buildScriptClassPath
+-        .takeIf { it.isNotEmpty() && scriptsConfig.enabled && scriptsConfig.buildScriptsEnabled }
+-        ?.let { CompilationEnvironment(emptySet(), it, scriptsConfig) }
+-    private val compileLock = ReentrantLock() // TODO: Lock at file-level
+-
+-    companion object {
+-        init {
+-            setIdeaIoUseFallback()
+-        }
+-    }
+-
+-    init {
+-        localFileSystem = VirtualFileManager.getInstance().getFileSystem(StandardFileSystems.FILE_PROTOCOL)
+-    }
+-
+-    /**
+-     * Updates the compiler environment using the given
+-     * configuration (which is a class from this project).
+-     */
+-    fun updateConfiguration(config: CompilerConfiguration) {
+-        defaultCompileEnvironment.updateConfiguration(config)
+-        buildScriptCompileEnvironment?.updateConfiguration(config)
+-    }
+-
++    private val environment = CompilationEnvironment(javaSourcePath, classPath)
++    private val compileLock = ReentrantLock()
++    companion object { init { setIdeaIoUseFallback() } }
++    init { localFileSystem = VirtualFileManager.getInstance().getFileSystem(StandardFileSystems.FILE_PROTOCOL) }
++    fun updateConfiguration(config: CompilerConfiguration) = environment.updateConfiguration(config)
+     fun createPsiFile(content: String, file: Path = Paths.get("dummy.virtual.kt"), language: Language = KotlinLanguage.INSTANCE, kind: CompilationKind = CompilationKind.DEFAULT): PsiFile {
+-        assert(!content.contains('\r'))
+-
+-        val new = psiFileFactoryFor(kind).createFileFromText(file.toString(), language, content, true, false)
+-        assert(new.virtualFile != null)
+-
+-        return new
+-    }
+-
+-    fun createKtFile(content: String, file: Path = Paths.get("dummy.virtual.kt"), kind: CompilationKind = CompilationKind.DEFAULT): KtFile =
+-            createPsiFile(content, file, language = KotlinLanguage.INSTANCE, kind = kind) as KtFile
+-
+-    fun createKtExpression(content: String, file: Path = Paths.get("dummy.virtual.kt"), kind: CompilationKind = CompilationKind.DEFAULT): KtExpression {
+-        val property = createKtDeclaration("val x = $content", file, kind) as KtProperty
+-        return property.initializer!!
+-    }
+-
+-    fun createKtDeclaration(content: String, file: Path = Paths.get("dummy.virtual.kt"), kind: CompilationKind = CompilationKind.DEFAULT): KtDeclaration {
+-        val parse = createKtFile(content, file, kind)
+-        val declarations = parse.declarations
+-
+-        assert(declarations.size == 1) { "${declarations.size} declarations in $content" }
+-
+-        val onlyDeclaration = declarations.first()
+-
+-        if (onlyDeclaration is KtScript) {
+-            val scriptDeclarations = onlyDeclaration.declarations
+-
+-            assert(declarations.size == 1) { "${declarations.size} declarations in script in $content" }
+-
+-            return scriptDeclarations.first()
++        require(!content.contains('\r')) { "Kotlin source must use LF line endings" }
++        return PsiFileFactory.getInstance(environment.environment.project).createFileFromText(file.toString(), language, content, true, false)
++    }
++    fun createKtFile(content: String, file: Path = Paths.get("dummy.virtual.kt"), kind: CompilationKind = CompilationKind.DEFAULT): KtFile = createPsiFile(content, file, KotlinLanguage.INSTANCE, kind) as KtFile
++    fun createKtExpression(content: String, file: Path = Paths.get("dummy.virtual.kt"), kind: CompilationKind = CompilationKind.DEFAULT): KtExpression = (createKtDeclaration("val x = $content", file, kind) as org.jetbrains.kotlin.psi.KtProperty).initializer!!
++    fun createKtDeclaration(content: String, file: Path = Paths.get("dummy.virtual.kt"), kind: CompilationKind = CompilationKind.DEFAULT): KtDeclaration = createKtFile(content, file, kind).declarations.singleOrNull() ?: throw KotlinLSException("Android Kotlin profile accepts one top-level declaration")
++    fun psiFileFactoryFor(kind: CompilationKind): PsiFileFactory = PsiFileFactory.getInstance(environment.environment.project)
++    fun compileKtFile(file: KtFile, sourcePath: Collection<KtFile>, kind: CompilationKind = CompilationKind.DEFAULT): Pair<BindingContext, ModuleDescriptor> = compileKtFiles(listOf(file), sourcePath, kind)
++    @Suppress("DEPRECATION", "K1_DEPRECATION")
++    fun compileKtFiles(files: Collection<KtFile>, sourcePath: Collection<KtFile>, kind: CompilationKind = CompilationKind.DEFAULT): Pair<BindingContext, ModuleDescriptor> = compileLock.withLock {
++        val (container, trace) = environment.createContainer(sourcePath)
++        val module = container.getService(ModuleDescriptor::class.java)
++        val analyzer = container.get<LazyTopDownAnalyzer>()
++        // Kotlin 2.3.21's stable binary signature is the 4-argument overload.
++        val analyze = LazyTopDownAnalyzer::class.java.methods.first {
++            it.name == "analyzeDeclarations" && it.parameterTypes.size == 4
+         }
+-        else return onlyDeclaration
+-    }
+-
+-    private fun compileEnvironmentFor(kind: CompilationKind): CompilationEnvironment = when (kind) {
+-        CompilationKind.DEFAULT -> defaultCompileEnvironment
+-        CompilationKind.BUILD_SCRIPT -> buildScriptCompileEnvironment ?: defaultCompileEnvironment
++        analyze.invoke(analyzer, TopDownAnalysisMode.TopLevelDeclarations, files, DataFlowInfo.EMPTY, null)
++        trace.bindingContext to module
+     }
+-
+-    fun psiFileFactoryFor(kind: CompilationKind): PsiFileFactory =
+-        PsiFileFactory.getInstance(compileEnvironmentFor(kind).environment.project)
+-
+-    fun compileKtFile(file: KtFile, sourcePath: Collection<KtFile>, kind: CompilationKind = CompilationKind.DEFAULT): Pair<BindingContext, ModuleDescriptor> =
+-        compileKtFiles(listOf(file), sourcePath, kind)
+-
+-    fun compileKtFiles(files: Collection<KtFile>, sourcePath: Collection<KtFile>, kind: CompilationKind = CompilationKind.DEFAULT): Pair<BindingContext, ModuleDescriptor> {
+-        if (kind == CompilationKind.BUILD_SCRIPT) {
+-            // Print the (legacy) script template used by the compiled Kotlin DSL build file
+-            files.forEach { LOG.debug { "$it -> ScriptDefinition: ${it.findScriptDefinition()?.asLegacyOrNull<KotlinScriptDefinition>()?.template?.simpleName}" } }
+-        }
+-
++    fun compileKtExpression(expression: KtExpression, scopeWithImports: org.jetbrains.kotlin.resolve.scopes.LexicalScope, sourcePath: Collection<KtFile>, kind: CompilationKind = CompilationKind.DEFAULT): Pair<BindingContext, ComponentProvider>? = try {
+         compileLock.withLock {
+-            val compileEnv = compileEnvironmentFor(kind)
+-            val (container, trace) = compileEnv.createContainer(sourcePath)
+-            val module = container.getService(ModuleDescriptor::class.java)
+-            container.get<LazyTopDownAnalyzer>().analyzeDeclarations(TopDownAnalysisMode.TopLevelDeclarations, files)
+-            return Pair(trace.bindingContext, module)
+-        }
+-    }
+-
+-    fun compileKtExpression(expression: KtExpression, scopeWithImports: LexicalScope, sourcePath: Collection<KtFile>, kind: CompilationKind = CompilationKind.DEFAULT): Pair<BindingContext, ComponentProvider>? =
+-        try {
+-            // Use same lock as 'compileFile' to avoid concurrency issues such as #42
+-            compileLock.withLock {
+-                val compileEnv = compileEnvironmentFor(kind)
+-                val (container, trace) = compileEnv.createContainer(sourcePath)
+-                val incrementalCompiler = container.get<ExpressionTypingServices>()
+-                incrementalCompiler.getTypeInfo(
+-                        scopeWithImports,
+-                        expression,
+-                        TypeUtils.NO_EXPECTED_TYPE,
+-                        DataFlowInfo.EMPTY,
+-                        InferenceSession.default,
+-                        trace,
+-                        true)
+-                Pair(trace.bindingContext, container)
+-            }
+-        } catch (e: KotlinFrontEndException) {
+-            LOG.error("""
+-                Error while analyzing expression: ${describeExpression(expression.text)}
+-                Message: ${e.message}
+-                Cause: ${e.cause?.message}
+-                Stack trace: ${e.attachments.joinToString("\n") { it.displayText }}
+-            """.trimIndent())
+-            null
++            val (container, trace) = environment.createContainer(sourcePath)
++            container.get<ExpressionTypingServices>().getTypeInfo(scopeWithImports, expression, TypeUtils.NO_EXPECTED_TYPE, DataFlowInfo.EMPTY, InferenceSession.default, trace, true)
++            trace.bindingContext to container
+         }
+-
+-    fun removeGeneratedCode(files: Collection<KtFile>) {
+-        files.forEach { file ->
+-            file.declarations.forEach { declaration ->
+-                outputDirectory.resolve(
+-                    file.packageFqName.asString().replace(".", File.separator) + File.separator + declaration.name + ".class"
+-                ).delete()
+-            }
+-        }
+-    }
+-
++    } catch (_: KotlinFrontEndException) { null }
++    fun removeGeneratedCode(files: Collection<KtFile>) { /* Unsupported in Android profile. */ }
+     fun generateCode(module: ModuleDescriptor, bindingContext: BindingContext, files: Collection<KtFile>) {
+-        outputDirectory.takeIf { codegenConfig.enabled }?.let {
+-            compileLock.withLock {
+-                val compileEnv = compileEnvironmentFor(CompilationKind.DEFAULT)
+-                val state = GenerationState.Builder(
+-                    project = compileEnv.environment.project,
+-                    builderFactory = ClassBuilderFactories.BINARIES,
+-                    module = module,
+-                    bindingContext = bindingContext,
+-                    files = files.toList(),
+-                    configuration = compileEnv.environment.configuration
+-                ).build()
+-                KotlinCodegenFacade.compileCorrectFiles(state)
+-                state.factory.writeAllTo(it)
+-            }
+-        }
+-    }
+-
+-    override fun close() {
+-        if (!closed) {
+-            defaultCompileEnvironment.close()
+-            buildScriptCompileEnvironment?.close()
+-            closed = true
+-        } else {
+-            LOG.warn("Compiler is already closed!")
+-        }
+-    }
+-}
+-
+-private fun describeExpression(expression: String): String = expression.lines().let { lines ->
+-    if (lines.size < 5) {
+-        expression
+-    } else {
+-        (lines.take(3) + listOf("...", lines.last())).joinToString(separator = "\n")
++        if (codegenConfig.enabled) throw UnsupportedOperationException("Android Kotlin profile does not provide JVM bytecode generation")
+     }
++    override fun close() { if (!closed) { environment.close(); closed = true } }
+ }
+diff --git a/server/src/main/kotlin/org/javacs/kt/definition/GoToDefinition.kt b/server/src/main/kotlin/org/javacs/kt/definition/GoToDefinition.kt
+index 77c8a05..944f915 100644
+--- a/server/src/main/kotlin/org/javacs/kt/definition/GoToDefinition.kt
++++ b/server/src/main/kotlin/org/javacs/kt/definition/GoToDefinition.kt
+@@ -2,6 +2,7 @@ package org.javacs.kt.definition
+ 
+ import org.eclipse.lsp4j.Location
+ import org.eclipse.lsp4j.Range
++import org.eclipse.lsp4j.Position
+ import java.nio.file.Path
+ import org.javacs.kt.CompiledFile
+ import org.javacs.kt.CompilerClassPath
+@@ -19,12 +20,63 @@ import org.javacs.kt.util.parseURI
+ import org.jetbrains.kotlin.js.resolve.diagnostics.findPsi
+ import org.jetbrains.kotlin.psi.KtNamedDeclaration
+ import org.jetbrains.kotlin.descriptors.ConstructorDescriptor
++import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
++import org.jetbrains.kotlin.descriptors.DeserializedDescriptor
++import org.jetbrains.kotlin.resolve.ImportedFromObjectCallableDescriptor
++import org.jetbrains.kotlin.renderer.DescriptorRenderer
++import java.security.MessageDigest
+ import java.io.File
+ import java.nio.file.Paths
+ 
+ private val cachedTempFiles = mutableMapOf<KlsURI, Path>()
+ private val definitionPattern = Regex("(?:class|interface|object|fun)\\s+(\\w+)")
+ 
++/** Read-only declaration preview for compiled Kotlin descriptors with no PSI source. */
++data class ReadonlySource(val text: String, val path: String, val languageId: String = "kotlin")
++
++class ReadonlyLocation(uri: String, range: Range, private val readonlySource: ReadonlySource) : Location(uri, range) {
++    fun getReadonlySource(): ReadonlySource = readonlySource
++}
++
++private const val MAX_PREVIEW_BYTES = 512 * 1024
++private val COMPILED_DECL_RENDERER = DescriptorRenderer.FQ_NAMES_IN_TYPES
++
++/**
++ * Imported object callables are wrappers created by resolution.  Unwrap only
++ * this compiler-owned wrapper; arbitrary `original`/fake-override traversal
++ * could turn a project or synthetic descriptor into a fabricated preview.
++ */
++private fun deserializedBinaryDescriptor(target: DeclarationDescriptor): DeclarationDescriptor? {
++    var current: DeclarationDescriptor = target
++    repeat(4) {
++        if (current is DeserializedDescriptor && current.findPsi() == null) return current
++        val imported = current as? ImportedFromObjectCallableDescriptor<*>
++            ?: return null
++        val next = imported.callableFromObject as? DeclarationDescriptor ?: return null
++        if (next === current) return null
++        current = next
++    }
++    return null
++}
++
++private fun previewRange(text: String, start: Int, end: Int): Range? {
++    if (start < 0 || end < start || end > text.length) return null
++    fun position(offset: Int): Position {
++        var line = 0
++        var character = 0
++        var i = 0
++        while (i < offset) {
++            when (text[i]) {
++                '\n' -> { line++; character = 0 }
++                else -> character++ // Kotlin Char is a UTF-16 code unit.
++            }
++            i++
++        }
++        return Position(line, character)
++    }
++    return Range(position(start), position(end))
++}
++
+ fun goToDefinition(
+     file: CompiledFile,
+     cursor: Int,
+@@ -87,6 +139,28 @@ fun goToDefinition(
+         }
+     }
+ 
++    // Only deserialized Kotlin declarations are eligible for a read-only preview.
++    // A missing PSI source alone is insufficient: project, Java and synthetic
++    // descriptors must never be presented as a fabricated compiled declaration.
++    val binaryTarget = deserializedBinaryDescriptor(target)
++    if (destination == null && binaryTarget != null) {
++        val rendered = COMPILED_DECL_RENDERER.render(binaryTarget)
++        val previewText = "// Compiled Kotlin declaration; no implementation available.\n$rendered"
++        val label = binaryTarget.name.asString()
++        // Search only the rendered declaration, never the explanatory prefix.
++        val renderedStart = rendered.indexOf(label)
++        val start = if (renderedStart >= 0) previewText.length - rendered.length + renderedStart else -1
++        val range = previewRange(previewText, start, start + label.length)
++        if (rendered.isNotBlank() && previewText.toByteArray(Charsets.UTF_8).size <= MAX_PREVIEW_BYTES && range != null) {
++            val safeLabel = binaryTarget.name.asString().replace(Regex("[^A-Za-z0-9_.-]"), "_").take(200)
++            val previewPath = "CompiledKotlin-$safeLabel.kt"
++            val digest = MessageDigest.getInstance("SHA-256").digest(previewText.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
++            val uri = "asterlyn-source://$digest/$previewPath"
++            val preview = ReadonlySource(previewText, previewPath)
++            return ReadonlyLocation(uri, range, preview)
++        }
++    }
++
+     return destination
+ }
+ 
+diff --git a/server/src/main/kotlin/org/javacs/kt/diagnostic/ConvertDiagnostic.kt b/server/src/main/kotlin/org/javacs/kt/diagnostic/ConvertDiagnostic.kt
+index a5f07e1..16207f0 100644
+--- a/server/src/main/kotlin/org/javacs/kt/diagnostic/ConvertDiagnostic.kt
++++ b/server/src/main/kotlin/org/javacs/kt/diagnostic/ConvertDiagnostic.kt
+@@ -44,5 +44,6 @@ private fun severity(severity: Severity): DiagnosticSeverity =
+             Severity.INFO -> DiagnosticSeverity.Information
+             Severity.ERROR -> DiagnosticSeverity.Error
+             Severity.WARNING -> DiagnosticSeverity.Warning
++            Severity.FIXED_WARNING, Severity.STRONG_WARNING -> DiagnosticSeverity.Warning
+         }
+ 
+diff --git a/shared/src/main/kotlin/org/javacs/kt/util/URIs.kt b/shared/src/main/kotlin/org/javacs/kt/util/URIs.kt
+index 2a0aac6..b8b43ca 100644
+--- a/shared/src/main/kotlin/org/javacs/kt/util/URIs.kt
++++ b/shared/src/main/kotlin/org/javacs/kt/util/URIs.kt
+@@ -1,8 +1,6 @@
+ package org.javacs.kt.util
+ 
+ import java.net.URI
+-import java.net.URLDecoder
+-import java.nio.charset.StandardCharsets
+ import java.nio.file.Path
+ import java.nio.file.Paths
+ 
+@@ -11,8 +9,9 @@ import java.nio.file.Paths
+  * Decoding is necessary since some language clients
+  * (including VSCode) invalidly percent-encode colons.
+  */
+-fun parseURI(uri: String): URI =
+-    URI.create(runCatching { URLDecoder.decode(uri, StandardCharsets.UTF_8.toString()).replace(" ", "%20") }.getOrDefault(uri))
++fun parseURI(uri: String): URI = runCatching { URI.create(uri) }.getOrElse {
++    URI.create(java.net.URLDecoder.decode(uri, Charsets.UTF_8.name()).replace(" ", "%20"))
++}
+ 
+ val URI.filePath: Path? get() = runCatching { Paths.get(this) }.getOrNull()
+ 

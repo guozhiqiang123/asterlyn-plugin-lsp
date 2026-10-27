@@ -1,0 +1,531 @@
+{
+  "dependencies": [
+    {
+      "basename": "annotations-24.0.0.jar",
+      "coordinate": "org.jetbrains:annotations:24.0.0",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "ff112f54ce874b8ae899cfd68f0315d96c9f406a338b8eca80c76d10e2e5a2f7",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/annotations/24.0.0/annotations-24.0.0.jar"
+    },
+    {
+      "basename": "checker-qual-3.43.0.jar",
+      "coordinate": "org.checkerframework:checker-qual:3.43.0",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "3fbc2e98f05854c3df16df9abaa955b91b15b3ecac33623208ed6424640ef0f6",
+      "url": "https://repo1.maven.org/maven2/org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.jar"
+    },
+    {
+      "basename": "error_prone_annotations-2.36.0.jar",
+      "coordinate": "com.google.errorprone:error_prone_annotations:2.36.0",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "77440e270b0bc9a249903c5a076c36a722c4886ca4f42675f2903a1c53ed61a5",
+      "url": "https://repo1.maven.org/maven2/com/google/errorprone/error_prone_annotations/2.36.0/error_prone_annotations-2.36.0.jar"
+    },
+    {
+      "basename": "exposed-core-0.37.3.jar",
+      "coordinate": "org.jetbrains.exposed:exposed-core:0.37.3",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "29aef18679de8728a409a4c2ce727586e35a7d632217545e86060ddf1f15aece",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/exposed/exposed-core/0.37.3/exposed-core-0.37.3.jar"
+    },
+    {
+      "basename": "exposed-dao-0.37.3.jar",
+      "coordinate": "org.jetbrains.exposed:exposed-dao:0.37.3",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "f50ac718b8f6b89384ba915e93ee8f59bd90fe8fff27e4d24fed26b89acf8bca",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/exposed/exposed-dao/0.37.3/exposed-dao-0.37.3.jar"
+    },
+    {
+      "basename": "exposed-jdbc-0.37.3.jar",
+      "coordinate": "org.jetbrains.exposed:exposed-jdbc:0.37.3",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "8c9ecb69d5951e8dfbf136b373448687d807d5c369515e7ba175fd9d1d7070ef",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/exposed/exposed-jdbc/0.37.3/exposed-jdbc-0.37.3.jar"
+    },
+    {
+      "basename": "failureaccess-1.0.2.jar",
+      "coordinate": "com.google.guava:failureaccess:1.0.2",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "8a8f81cf9b359e3f6dfa691a1e776985c061ef2f223c9b2c80753e1b458e8064",
+      "url": "https://repo1.maven.org/maven2/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar"
+    },
+    {
+      "basename": "google-java-format-1.8.jar",
+      "coordinate": "com.google.googlejavaformat:google-java-format:1.8",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "4e12b232d7f65cb1dcfffe0b44f97f20977288162dcdec9df09255f298003b98",
+      "url": "https://repo1.maven.org/maven2/com/google/googlejavaformat/google-java-format/1.8/google-java-format-1.8.jar"
+    },
+    {
+      "basename": "gson-2.10.1.jar",
+      "coordinate": "com.google.code.gson:gson:2.10.1",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "4241c14a7727c34feea6507ec801318a3d4a90f070e4525681079fb94ee4c593",
+      "url": "https://repo1.maven.org/maven2/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar"
+    },
+    {
+      "basename": "guava-33.4.0-jre.jar",
+      "coordinate": "com.google.guava:guava:33.4.0-jre",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "b918c98a7e44dbe94ebd9fe3e40cddaadb5a93e6a78eb6008b42df237241e538",
+      "url": "https://repo1.maven.org/maven2/com/google/guava/guava/33.4.0-jre/guava-33.4.0-jre.jar"
+    },
+    {
+      "basename": "h2-1.4.200.jar",
+      "coordinate": "com.h2database:h2:1.4.200",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "3ad9ac4b6aae9cd9d3ac1c447465e1ed06019b851b893dd6a8d76ddb6d85bca6",
+      "url": "https://repo1.maven.org/maven2/com/h2database/h2/1.4.200/h2-1.4.200.jar"
+    },
+    {
+      "basename": "j2objc-annotations-3.0.0.jar",
+      "coordinate": "com.google.j2objc:j2objc-annotations:3.0.0",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "88241573467ddca44ffd4d74aa04c2bbfd11bf7c17e0c342c94c9de7a70a7c64",
+      "url": "https://repo1.maven.org/maven2/com/google/j2objc/j2objc-annotations/3.0.0/j2objc-annotations-3.0.0.jar"
+    },
+    {
+      "basename": "java-decompiler-engine-243.22562.218.jar",
+      "coordinate": "com.jetbrains.intellij.java:java-decompiler-engine:243.22562.218",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "984e2d2ab569cc6d41ce3bce6c7c804dea2fb414216e1c0944584aeacc87ec82",
+      "url": "https://repo1.maven.org/maven2/com/jetbrains/intellij/java/java-decompiler-engine/243.22562.218/java-decompiler-engine-243.22562.218.jar"
+    },
+    {
+      "basename": "jcommander-1.82.jar",
+      "coordinate": "com.beust:jcommander:1.82",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "deeac157c8de6822878d85d0c7bc8467a19cc8484d37788f7804f039dde280b1",
+      "url": "https://repo1.maven.org/maven2/com/beust/jcommander/1.82/jcommander-1.82.jar"
+    },
+    {
+      "basename": "jline-3.24.1.jar",
+      "coordinate": "org.jline:jline:3.24.1",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "bd0e64bc24b21a975d47f9d12d73119ab51dce7639f0b45889d89f6325679c6d",
+      "url": "https://repo1.maven.org/maven2/org/jline/jline/3.24.1/jline-3.24.1.jar"
+    },
+    {
+      "basename": "jna-4.2.2.jar",
+      "coordinate": "net.java.dev.jna:jna:4.2.2",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "1f38af54e06c6e6f6dbf39ba2c052b952dea5dddb4871127b34639ddeb11bdbe",
+      "url": "https://repo1.maven.org/maven2/net/java/dev/jna/jna/4.2.2/jna-4.2.2.jar"
+    },
+    {
+      "basename": "jsr305-3.0.2.jar",
+      "coordinate": "com.google.code.findbugs:jsr305:3.0.2",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7",
+      "url": "https://repo1.maven.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar"
+    },
+    {
+      "basename": "kotlin-compiler-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-compiler:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "e4348091143f7077be6816f75992216bc94c065649441f9f7f6af0eed0a9b3a7",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-compiler/2.3.21/kotlin-compiler-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-power-assert-compiler-plugin-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-power-assert-compiler-plugin:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "29164fe3dd405d78204655bb533cf1abc409288be825039c3443fd894096745e",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-power-assert-compiler-plugin/2.3.21/kotlin-power-assert-compiler-plugin-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-reflect-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-reflect:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "33e37d9dfa86c7a29ab34e975b5f4a1287b458878611051f3485652220c1a2cb",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-reflect/2.3.21/kotlin-reflect-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-sam-with-receiver-compiler-plugin-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-sam-with-receiver-compiler-plugin:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "8e9eb418d5ddae8c24ee79da1d5394636dc256defc62a3ea347bd59aca8592fd",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-sam-with-receiver-compiler-plugin/2.3.21/kotlin-sam-with-receiver-compiler-plugin-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-script-runtime-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-script-runtime:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "ec61bf1229c837fa9f4255f34ca69816138b73158e7ae9b8d964cf92ca6dfd2e",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-script-runtime/2.3.21/kotlin-script-runtime-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-scripting-common-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-scripting-common:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "69885751bdce7d4e1d1b9758baf4bc0fe03b24827abd7b7687e5a7c0b4d029ed",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-scripting-common/2.3.21/kotlin-scripting-common-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-scripting-compiler-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-scripting-compiler:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "bbcbc97789cc599ad28c3fadb8ad479b9ad98849da797394f05cbe450fc040d5",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-scripting-compiler/2.3.21/kotlin-scripting-compiler-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-scripting-compiler-impl-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-scripting-compiler-impl:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "fe93b36234d6ff2ae5d1c8f965c5ae7c61b5211c5945d1fe8f3b2136ef313520",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-scripting-compiler-impl/2.3.21/kotlin-scripting-compiler-impl-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-scripting-jvm-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-scripting-jvm:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "8cb637132fc7fa511c700ee7f2b63b282630167f5ebd699a263a0b67b5d486ab",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-scripting-jvm/2.3.21/kotlin-scripting-jvm-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-scripting-jvm-host-unshaded-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-scripting-jvm-host-unshaded:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "d5b8681bc7ffca8ca19213ce50146cbb063e76f404e116f2ab8bbd66de2503c4",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-scripting-jvm-host-unshaded/2.3.21/kotlin-scripting-jvm-host-unshaded-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-stdlib-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-stdlib:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "6f64eac736db9434dd6925b4a518b9d1d17177652320c37916cf9ba3ce7d7d7a",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.3.21/kotlin-stdlib-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-stdlib-jdk7-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "e2243abac2bed6e0b47be18b2b7fe1c1b4cf6a431480353dcd49d1ed35f31199",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk7/2.3.21/kotlin-stdlib-jdk7-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-stdlib-jdk8-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "63091929246beba86b5fb2b020a6f5d06e01693a960b58a59959c8713667991c",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk8/2.3.21/kotlin-stdlib-jdk8-2.3.21.jar"
+    },
+    {
+      "basename": "kotlinx-coroutines-core-jvm-1.8.0.jar",
+      "coordinate": "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.8.0",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "9860906a1937490bf5f3b06d2f0e10ef451e65b95b269f22daf68a3d1f5065c5",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.8.0/kotlinx-coroutines-core-jvm-1.8.0.jar"
+    },
+    {
+      "basename": "ktfmt-b5d31d1.jar",
+      "coordinate": "com.github.fwcd.ktfmt:ktfmt:b5d31d1",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "5233fe280d75d27405166785afc948b6ede2339a5b7851f7956a399420f3a09f",
+      "url": "https://repo1.maven.org/maven2/com/github/fwcd/ktfmt/ktfmt/b5d31d1/ktfmt-b5d31d1.jar"
+    },
+    {
+      "basename": "listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+      "coordinate": "com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "b372a037d4230aa57fbeffdef30fd6123f9c0c2db85d0aced00c91b974f33f99",
+      "url": "https://repo1.maven.org/maven2/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar"
+    },
+    {
+      "basename": "org.eclipse.lsp4j-0.21.2.jar",
+      "coordinate": "org.eclipse.lsp4j:org.eclipse.lsp4j:0.21.2",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "584470047893197916445f50fca93d18ad326756d55c5ae7ffb8dc0ef81c25b5",
+      "url": "https://repo1.maven.org/maven2/org/eclipse/lsp4j/org.eclipse.lsp4j/0.21.2/org.eclipse.lsp4j-0.21.2.jar"
+    },
+    {
+      "basename": "org.eclipse.lsp4j.jsonrpc-0.21.2.jar",
+      "coordinate": "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.21.2",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "cb871751dffbabfac0b43a84309625ab6ea4e4eb08805b32144d20c5dfcdf282",
+      "url": "https://repo1.maven.org/maven2/org/eclipse/lsp4j/org.eclipse.lsp4j.jsonrpc/0.21.2/org.eclipse.lsp4j.jsonrpc-0.21.2.jar"
+    },
+    {
+      "basename": "slf4j-api-1.7.25.jar",
+      "coordinate": "org.slf4j:slf4j-api:1.7.25",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "18c4a0095d5c1da6b817592e767bb23d29dd2f560ad74df75ff3961dbde25b79",
+      "url": "https://repo1.maven.org/maven2/org/slf4j/slf4j-api/1.7.25/slf4j-api-1.7.25.jar"
+    },
+    {
+      "basename": "sqlite-jdbc-3.48.0.0.jar",
+      "coordinate": "org.xerial:sqlite-jdbc:3.48.0.0",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "dbe24ab138e9654c918f561299e47cb6a3baf1a946eda97871f6f3abd4eca395",
+      "url": "https://repo1.maven.org/maven2/org/xerial/sqlite-jdbc/3.48.0.0/sqlite-jdbc-3.48.0.0.jar"
+    }
+  ],
+  "patchSha256": "0d90050f1145296aaa8b01e44fca07357f690d915e167baf6de200c92e868931",
+  "runtimeLibraries": [
+    {
+      "basename": "annotations-24.0.0.jar",
+      "coordinate": "org.jetbrains:annotations:24.0.0",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "ff112f54ce874b8ae899cfd68f0315d96c9f406a338b8eca80c76d10e2e5a2f7",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/annotations/24.0.0/annotations-24.0.0.jar"
+    },
+    {
+      "basename": "checker-qual-3.43.0.jar",
+      "coordinate": "org.checkerframework:checker-qual:3.43.0",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "3fbc2e98f05854c3df16df9abaa955b91b15b3ecac33623208ed6424640ef0f6",
+      "url": "https://repo1.maven.org/maven2/org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.jar"
+    },
+    {
+      "basename": "error_prone_annotations-2.36.0.jar",
+      "coordinate": "com.google.errorprone:error_prone_annotations:2.36.0",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "77440e270b0bc9a249903c5a076c36a722c4886ca4f42675f2903a1c53ed61a5",
+      "url": "https://repo1.maven.org/maven2/com/google/errorprone/error_prone_annotations/2.36.0/error_prone_annotations-2.36.0.jar"
+    },
+    {
+      "basename": "exposed-core-0.37.3.jar",
+      "coordinate": "org.jetbrains.exposed:exposed-core:0.37.3",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "29aef18679de8728a409a4c2ce727586e35a7d632217545e86060ddf1f15aece",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/exposed/exposed-core/0.37.3/exposed-core-0.37.3.jar"
+    },
+    {
+      "basename": "exposed-dao-0.37.3.jar",
+      "coordinate": "org.jetbrains.exposed:exposed-dao:0.37.3",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "f50ac718b8f6b89384ba915e93ee8f59bd90fe8fff27e4d24fed26b89acf8bca",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/exposed/exposed-dao/0.37.3/exposed-dao-0.37.3.jar"
+    },
+    {
+      "basename": "exposed-jdbc-0.37.3.jar",
+      "coordinate": "org.jetbrains.exposed:exposed-jdbc:0.37.3",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "8c9ecb69d5951e8dfbf136b373448687d807d5c369515e7ba175fd9d1d7070ef",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/exposed/exposed-jdbc/0.37.3/exposed-jdbc-0.37.3.jar"
+    },
+    {
+      "basename": "failureaccess-1.0.2.jar",
+      "coordinate": "com.google.guava:failureaccess:1.0.2",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "8a8f81cf9b359e3f6dfa691a1e776985c061ef2f223c9b2c80753e1b458e8064",
+      "url": "https://repo1.maven.org/maven2/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar"
+    },
+    {
+      "basename": "google-java-format-1.8.jar",
+      "coordinate": "com.google.googlejavaformat:google-java-format:1.8",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "4e12b232d7f65cb1dcfffe0b44f97f20977288162dcdec9df09255f298003b98",
+      "url": "https://repo1.maven.org/maven2/com/google/googlejavaformat/google-java-format/1.8/google-java-format-1.8.jar"
+    },
+    {
+      "basename": "gson-2.10.1.jar",
+      "coordinate": "com.google.code.gson:gson:2.10.1",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "4241c14a7727c34feea6507ec801318a3d4a90f070e4525681079fb94ee4c593",
+      "url": "https://repo1.maven.org/maven2/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar"
+    },
+    {
+      "basename": "guava-33.4.0-jre.jar",
+      "coordinate": "com.google.guava:guava:33.4.0-jre",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "b918c98a7e44dbe94ebd9fe3e40cddaadb5a93e6a78eb6008b42df237241e538",
+      "url": "https://repo1.maven.org/maven2/com/google/guava/guava/33.4.0-jre/guava-33.4.0-jre.jar"
+    },
+    {
+      "basename": "h2-1.4.200.jar",
+      "coordinate": "com.h2database:h2:1.4.200",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "3ad9ac4b6aae9cd9d3ac1c447465e1ed06019b851b893dd6a8d76ddb6d85bca6",
+      "url": "https://repo1.maven.org/maven2/com/h2database/h2/1.4.200/h2-1.4.200.jar"
+    },
+    {
+      "basename": "j2objc-annotations-3.0.0.jar",
+      "coordinate": "com.google.j2objc:j2objc-annotations:3.0.0",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "88241573467ddca44ffd4d74aa04c2bbfd11bf7c17e0c342c94c9de7a70a7c64",
+      "url": "https://repo1.maven.org/maven2/com/google/j2objc/j2objc-annotations/3.0.0/j2objc-annotations-3.0.0.jar"
+    },
+    {
+      "basename": "java-decompiler-engine-243.22562.218.jar",
+      "coordinate": "com.jetbrains.intellij.java:java-decompiler-engine:243.22562.218",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "984e2d2ab569cc6d41ce3bce6c7c804dea2fb414216e1c0944584aeacc87ec82",
+      "url": "https://repo1.maven.org/maven2/com/jetbrains/intellij/java/java-decompiler-engine/243.22562.218/java-decompiler-engine-243.22562.218.jar"
+    },
+    {
+      "basename": "jcommander-1.82.jar",
+      "coordinate": "com.beust:jcommander:1.82",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "deeac157c8de6822878d85d0c7bc8467a19cc8484d37788f7804f039dde280b1",
+      "url": "https://repo1.maven.org/maven2/com/beust/jcommander/1.82/jcommander-1.82.jar"
+    },
+    {
+      "basename": "jline-3.24.1.jar",
+      "coordinate": "org.jline:jline:3.24.1",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "bd0e64bc24b21a975d47f9d12d73119ab51dce7639f0b45889d89f6325679c6d",
+      "url": "https://repo1.maven.org/maven2/org/jline/jline/3.24.1/jline-3.24.1.jar"
+    },
+    {
+      "basename": "jna-4.2.2.jar",
+      "coordinate": "net.java.dev.jna:jna:4.2.2",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "1f38af54e06c6e6f6dbf39ba2c052b952dea5dddb4871127b34639ddeb11bdbe",
+      "url": "https://repo1.maven.org/maven2/net/java/dev/jna/jna/4.2.2/jna-4.2.2.jar"
+    },
+    {
+      "basename": "jsr305-3.0.2.jar",
+      "coordinate": "com.google.code.findbugs:jsr305:3.0.2",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7",
+      "url": "https://repo1.maven.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar"
+    },
+    {
+      "basename": "kotlin-compiler-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-compiler:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "e4348091143f7077be6816f75992216bc94c065649441f9f7f6af0eed0a9b3a7",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-compiler/2.3.21/kotlin-compiler-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-power-assert-compiler-plugin-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-power-assert-compiler-plugin:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "29164fe3dd405d78204655bb533cf1abc409288be825039c3443fd894096745e",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-power-assert-compiler-plugin/2.3.21/kotlin-power-assert-compiler-plugin-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-reflect-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-reflect:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "33e37d9dfa86c7a29ab34e975b5f4a1287b458878611051f3485652220c1a2cb",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-reflect/2.3.21/kotlin-reflect-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-sam-with-receiver-compiler-plugin-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-sam-with-receiver-compiler-plugin:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "8e9eb418d5ddae8c24ee79da1d5394636dc256defc62a3ea347bd59aca8592fd",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-sam-with-receiver-compiler-plugin/2.3.21/kotlin-sam-with-receiver-compiler-plugin-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-script-runtime-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-script-runtime:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "ec61bf1229c837fa9f4255f34ca69816138b73158e7ae9b8d964cf92ca6dfd2e",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-script-runtime/2.3.21/kotlin-script-runtime-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-scripting-common-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-scripting-common:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "69885751bdce7d4e1d1b9758baf4bc0fe03b24827abd7b7687e5a7c0b4d029ed",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-scripting-common/2.3.21/kotlin-scripting-common-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-scripting-compiler-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-scripting-compiler:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "bbcbc97789cc599ad28c3fadb8ad479b9ad98849da797394f05cbe450fc040d5",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-scripting-compiler/2.3.21/kotlin-scripting-compiler-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-scripting-compiler-impl-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-scripting-compiler-impl:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "fe93b36234d6ff2ae5d1c8f965c5ae7c61b5211c5945d1fe8f3b2136ef313520",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-scripting-compiler-impl/2.3.21/kotlin-scripting-compiler-impl-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-scripting-jvm-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-scripting-jvm:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "8cb637132fc7fa511c700ee7f2b63b282630167f5ebd699a263a0b67b5d486ab",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-scripting-jvm/2.3.21/kotlin-scripting-jvm-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-scripting-jvm-host-unshaded-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-scripting-jvm-host-unshaded:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "d5b8681bc7ffca8ca19213ce50146cbb063e76f404e116f2ab8bbd66de2503c4",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-scripting-jvm-host-unshaded/2.3.21/kotlin-scripting-jvm-host-unshaded-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-stdlib-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-stdlib:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "6f64eac736db9434dd6925b4a518b9d1d17177652320c37916cf9ba3ce7d7d7a",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.3.21/kotlin-stdlib-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-stdlib-jdk7-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "e2243abac2bed6e0b47be18b2b7fe1c1b4cf6a431480353dcd49d1ed35f31199",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk7/2.3.21/kotlin-stdlib-jdk7-2.3.21.jar"
+    },
+    {
+      "basename": "kotlin-stdlib-jdk8-2.3.21.jar",
+      "coordinate": "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.21",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "63091929246beba86b5fb2b020a6f5d06e01693a960b58a59959c8713667991c",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk8/2.3.21/kotlin-stdlib-jdk8-2.3.21.jar"
+    },
+    {
+      "basename": "kotlinx-coroutines-core-jvm-1.8.0.jar",
+      "coordinate": "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.8.0",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "9860906a1937490bf5f3b06d2f0e10ef451e65b95b269f22daf68a3d1f5065c5",
+      "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.8.0/kotlinx-coroutines-core-jvm-1.8.0.jar"
+    },
+    {
+      "basename": "ktfmt-b5d31d1.jar",
+      "coordinate": "com.github.fwcd.ktfmt:ktfmt:b5d31d1",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "5233fe280d75d27405166785afc948b6ede2339a5b7851f7956a399420f3a09f",
+      "url": "https://repo1.maven.org/maven2/com/github/fwcd/ktfmt/ktfmt/b5d31d1/ktfmt-b5d31d1.jar"
+    },
+    {
+      "basename": "listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+      "coordinate": "com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "b372a037d4230aa57fbeffdef30fd6123f9c0c2db85d0aced00c91b974f33f99",
+      "url": "https://repo1.maven.org/maven2/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar"
+    },
+    {
+      "basename": "org.eclipse.lsp4j-0.21.2.jar",
+      "coordinate": "org.eclipse.lsp4j:org.eclipse.lsp4j:0.21.2",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "584470047893197916445f50fca93d18ad326756d55c5ae7ffb8dc0ef81c25b5",
+      "url": "https://repo1.maven.org/maven2/org/eclipse/lsp4j/org.eclipse.lsp4j/0.21.2/org.eclipse.lsp4j-0.21.2.jar"
+    },
+    {
+      "basename": "org.eclipse.lsp4j.jsonrpc-0.21.2.jar",
+      "coordinate": "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.21.2",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "cb871751dffbabfac0b43a84309625ab6ea4e4eb08805b32144d20c5dfcdf282",
+      "url": "https://repo1.maven.org/maven2/org/eclipse/lsp4j/org.eclipse.lsp4j.jsonrpc/0.21.2/org.eclipse.lsp4j.jsonrpc-0.21.2.jar"
+    },
+    {
+      "basename": "slf4j-api-1.7.25.jar",
+      "coordinate": "org.slf4j:slf4j-api:1.7.25",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "18c4a0095d5c1da6b817592e767bb23d29dd2f560ad74df75ff3961dbde25b79",
+      "url": "https://repo1.maven.org/maven2/org/slf4j/slf4j-api/1.7.25/slf4j-api-1.7.25.jar"
+    },
+    {
+      "basename": "sqlite-jdbc-3.48.0.0.jar",
+      "coordinate": "org.xerial:sqlite-jdbc:3.48.0.0",
+      "licenseSha256": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+      "sha256": "dbe24ab138e9654c918f561299e47cb6a3baf1a946eda97871f6f3abd4eca395",
+      "url": "https://repo1.maven.org/maven2/org/xerial/sqlite-jdbc/3.48.0.0/sqlite-jdbc-3.48.0.0.jar"
+    }
+  ],
+  "schema": 1,
+  "sourceArchiveSha256": "9b92b4cfe5a073ce16366ad3c986ec2ed7983c5db0837561a8106ba0cd74f149",
+  "sourceCommit": "6d9e61b79d4631e75516def7ab7ff0d8b9310467",
+  "sourceLicensePath": "LICENSE.txt",
+  "sourceLicenseSha256": "1690b72b5a2beb330c98c0715929bf789cb8d91670c29ff2e4abcdae84329136",
+  "sourceRepository": "https://github.com/fwcd/kotlin-language-server"
+}

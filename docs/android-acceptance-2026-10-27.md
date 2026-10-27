@@ -251,3 +251,17 @@ Standard library previews expose declarations, not unavailable source bodies.
 This milestone does not add Gradle scripts/Groovy/XML/generated-source builds,
 full cross-language references or a large-project memory soak guarantee. Existing
 keyboard/readonly preview accessibility is retained without a new UI control.
+
+Final exact-package boostCleaner receipt (`real-036-pull.json`): all five semantic
+groups and both baseline/injected diagnostic checks pass across the actual 25-module
+model. Ready 266.917 s, total 273.958 s, peak owned RSS 1,547,936 KiB; shutdown
+2.341 s. Java→Java 216 ms, Kotlin→Java 1,646 ms, Java→Kotlin 1,037 ms; compiled
+stdlib coerceAtLeast 318 ms and minutes 116 ms. Java/Kotlin baseline errors are
+both zero, injected diagnostics cover the exact appended line (13/390 ms). All
+business source hashes remain unchanged and no stderr traffic is observed.
+
+The host's signed 0.1.22 build `9fbe2c4` now bundles this exact 0.3.6 archive, has
+passed the exact native package health checkpoints and has replaced the canonical
+local installation. Both stored-icon launches record frontend readiness. Final
+interactive navigation acceptance is pending macOS unlock; the lock-screen run
+of the rendered smoke gate reports WINDOW_MISSING and is not claimed as a pass.

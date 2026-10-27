@@ -120,6 +120,7 @@ async function load(refresh = false) {
     let partialJava = false;
     if (options.components["kotlin-compiler-bridge"]) {
       languageContext = await prepareAndroidKotlin({model, stateDirectory: state, options, documents: new Map([...documents].map(([uri, doc]) => [uri, {...doc}])),
+        onBackendReady: () => {if(!closed)status(!indexing);},
         onDiagnostics: params => {const doc = documents.get(params?.uri); if (!overlayPending && doc?.version === params?.version && Array.isArray(params.diagnostics)) {kotlinDiagnostics.set(params.uri, {version: params.version, items: params.diagnostics}); host.notify("textDocument/publishDiagnostics", params);}},
         onChanged: async changes => {if (!backendReady) return; backend.notify("workspace/didChangeWatchedFiles", {changes: changes.map(item => typeof item === "string" ? {uri: item, type: 2} : item)}); await backend.request("workspace/executeCommand", {command: "asterlyn.java.refreshModel", arguments: []}); if(!indexing)status(true);refreshDiagnostics();}, onError: error => {if(closed)return;if(error?.message==="kotlin-backend-exited"){kotlinDiagnostics.clear();refreshDiagnostics();}status(!indexing,"warning",error?.message==="kotlin-backend-exited"?"kotlin-backend-exited":"java-analysis-awaiting-kotlin");}});
       try {await languageContext.awaitJavaAbi();} catch {partialJava = true;}

@@ -82,3 +82,7 @@ Final packaged-path run: ready 8.215 s, whole test 35.483 s, owned-tree peak 1,3
 shutdown 820 ms. Twenty warm Java→Kotlin plus Kotlin→Java request pairs: p50 6 ms / p95 9 ms.
 These measurements include exact declaration mapping and do not include a new Gradle import.
 The metadata reader was built with Amazon Corretto Java 17.0.17 (`--release 17`).
+
+Final crash-recovery package run also passes forced termination/restart of the owned Kotlin JVMs:
+ready 8.217 s, complete test 41.899 s, peak 1,284,096 KiB, shutdown 827 ms, warm paired definitions
+p50 8 ms / p95 19 ms. All observed child processes are checked stopped after shutdown.

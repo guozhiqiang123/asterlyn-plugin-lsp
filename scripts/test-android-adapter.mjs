@@ -116,6 +116,12 @@ try {
   const invalidDiagnostics = await peer.request("textDocument/diagnostic", {textDocument: {uri: docs.get("LibraryValue.kt").uri}}, 30000);
   assert.ok(invalidDiagnostics.items.length); summaries.checks.reverseModuleDependencyRejected = true;
   change("LibraryValue.kt", validKotlin);
+  const kotlinPids = execFileSync("/bin/ps", ["-axo", "pid=,ppid=,args="], {encoding:"utf8"}).split("\n").map(row=>/^\s*(\d+)\s+(\d+)\s+(.*)$/u.exec(row)).filter(row=>row && Number(row[2])===child.pid && row[3].includes("org.javacs.kt.MainKt")).map(row=>Number(row[1]));
+  assert.ok(kotlinPids.length>0 && kotlinPids.length<=2);
+  for(const pid of kotlinPids)process.kill(pid,"SIGKILL");
+  await pause(200);
+  assert.match(first(await semantic("definition","MainActivity.kt","freshlyAdded"))?.uri??"",/JavaBridge\.java$/u);
+  summaries.checks.kotlinCrashRecovers = true;
 } catch (error) {summaries.failure = error.stack; process.exitCode = 1;}
 finally {
   const stop = Date.now(); clearInterval(sampler);

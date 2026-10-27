@@ -16,7 +16,7 @@ async function findJar(root, name) {
 }
 
 /** One private source view per module dependency closure; at most two lazy Kotlin JVMs. */
-export async function prepareAndroidKotlin({model, stateDirectory, options, documents = new Map(), onDiagnostics, onChanged, onError = () => {}}) {
+export async function prepareAndroidKotlin({model, stateDirectory, options, documents = new Map(), onDiagnostics, onChanged, onBackendReady, onError = () => {}}) {
   const sessionRoot = join(pathOf(stateDirectory), `android-kotlin-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   await mkdir(sessionRoot, {recursive: true});
   const abort = new AbortController(), compilerRoot = pathOf(options.components["kotlin-compiler-bridge"].root);
@@ -119,6 +119,7 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
       });
       for (const [key, value] of docsFor(id)) await service.applyOverlay(key, value);
       for (const key of initialDocs.keys()) if (!(documents instanceof Map ? documents.has(key) : key in documents)) await service.closeOverlay(key);
+      if (!abort.signal.aborted) onBackendReady?.();
       return service;
     })().catch(async error => {entries.delete(id); await entry.service?.close(); throw error;}).finally(() => {entry.starting = null;});
     return entry.starting;

@@ -121,6 +121,7 @@ async function load(refresh = false) {
     if (options.components["kotlin-compiler-bridge"]) {
       languageContext = await prepareAndroidKotlin({model, stateDirectory: state, options, documents: new Map([...documents].map(([uri, doc]) => [uri, {...doc}])),
         onBackendReady: () => {if(!closed)status(!indexing);},
+        onJavaAbiReady: () => {if (!closed && backendReady) {status(!indexing); refreshDiagnostics();}},
         onDiagnostics: params => {const doc = documents.get(params?.uri); if (!overlayPending && doc?.version === params?.version && Array.isArray(params.diagnostics)) {kotlinDiagnostics.set(params.uri, {version: params.version, items: params.diagnostics}); host.notify("textDocument/publishDiagnostics", params);}},
         onChanged: async changes => {if (!backendReady) return; backend.notify("workspace/didChangeWatchedFiles", {changes: changes.map(item => typeof item === "string" ? {uri: item, type: 2} : item)}); await backend.request("workspace/executeCommand", {command: "asterlyn.java.refreshModel", arguments: []}); if(!indexing)status(true);refreshDiagnostics();}, onError: error => {if(closed)return;if(error?.message==="kotlin-backend-exited"){kotlinDiagnostics.clear();refreshDiagnostics();}status(!indexing,"warning",error?.message==="kotlin-backend-exited"?"kotlin-backend-exited":"java-analysis-awaiting-kotlin");}});
       try {await languageContext.awaitJavaAbi();} catch {partialJava = true;}
@@ -155,13 +156,16 @@ async function load(refresh = false) {
 async function diagnostics(uri, doc, version) {
   if (doc.languageId === "kotlin") {
     await languageContext?.ensureDocument(uri);
-    for (let attempt = 0; attempt < 400; attempt++) {if (doc.version !== version) throw Error("stale-diagnostics"); const current = kotlinDiagnostics.get(uri); if (current?.version === version) return {kind: "full", items: current.items}; await pause(50);}
+    for (let attempt = 0; attempt < 400; attempt++) {if (doc.version !== version) throw Error("stale-diagnostics"); const current = !overlayPending && languageContext.currentDiagnostics(uri); if (current?.version === version) {host.notify("textDocument/publishDiagnostics", current); return {kind: "full", items: current.diagnostics};} await pause(50);}
     throw Error("kotlin-diagnostics-pending");
   }
-  await languageContext?.awaitJavaAbi(); const digest = hash(doc.text), peer = backend;
+  // Syntax diagnostics depend on the current Java working copy only. Keep them responsive while
+  // Kotlin ABI is rebuilding; type diagnostics wait until that exact ABI revision is committed.
+  const syntaxOnly = languageContext?.javaAbiCurrent() === false;
+  const digest = hash(doc.text), peer = backend;
   for (let attempt = 0; attempt < 40; attempt++) {
     if (doc.version !== version || backend !== peer) throw Error("stale-diagnostics");
-    try {const reply = await peer.request("workspace/executeCommand", {command: "asterlyn.java.documentDiagnostics", arguments: [{uri, version, digest}]}); if (reply.version !== version || reply.digest !== digest || hash(doc.text) !== digest) throw Error("stale-diagnostics"); return {kind: "full", items: reply.items};}
+    try {const reply = await peer.request("workspace/executeCommand", {command: "asterlyn.java.documentDiagnostics", arguments: [{uri, version, digest, syntaxOnly}]}); if (reply.version !== version || reply.digest !== digest || hash(doc.text) !== digest) throw Error("stale-diagnostics"); if (syntaxOnly) status(!indexing, "warning", "java-analysis-awaiting-kotlin"); return {kind: "full", items: reply.items};}
     catch {if (attempt === 39) throw Error("working-copy-not-current"); await pause(50);}
   }
 }
@@ -170,7 +174,9 @@ host.on("request", async request => {
   try {
     if (request.method === "initialize") {options = request.params?.initializationOptions?.analysis; if (!isAbsolute(options?.stateDirectory)) throw Error("analysis-options"); options.stateDirectory=await realpath(options.stateDirectory);host.reply(request.id, {capabilities: {positionEncoding: "utf-16", textDocumentSync: {openClose: true, change: 2}, definitionProvider: true, referencesProvider: true, hoverProvider: true, completionProvider: {triggerCharacters: ["."]}, diagnosticProvider: {interFileDependencies: true, workspaceDiagnostics: false}}, serverInfo: {name: "Asterlyn Android language adapter", version: "1"}}); return;}
     if (request.method === "shutdown") {closed = true; clearInterval(poll); await stopBackend(); host.reply(request.id, null); return;}
-    await overlayQueue;
+    // More notifications can arrive while an earlier overlay is awaited. Drain the current queue
+    // before capturing the request's analysis revision, rather than observing a half-applied batch.
+    let queued; do {queued = overlayQueue; await queued;} while (queued !== overlayQueue);
     if (!backend || indexing) throw Error("android-indexing");
     const params = request.params, doc = document(params?.textDocument?.uri), version = doc.version, current = revision;
     let result;
@@ -178,7 +184,7 @@ host.on("request", async request => {
     else {
       if (!["textDocument/definition", "textDocument/references", "textDocument/hover", "textDocument/completion"].includes(request.method)) throw Error("unsupported-method");
       if (doc.languageId === "kotlin") result = await languageContext.request(request.method, params);
-      else {await languageContext?.awaitJavaAbi(); result = await backend.request(request.method, params);}
+      else {if (languageContext?.javaAbiCurrent() === false) {void languageContext.awaitJavaAbi().catch(() => {}); throw Error("android-indexing");} result = await backend.request(request.method, params);}
       if (["textDocument/definition", "textDocument/references"].includes(request.method)) result = await canonical(result);
     }
     if (doc.version !== version || current !== revision) throw Error("stale-result");

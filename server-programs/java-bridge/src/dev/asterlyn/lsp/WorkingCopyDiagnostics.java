@@ -27,7 +27,8 @@ public final class WorkingCopyDiagnostics implements IDelegateCommandHandler {
                 || !(arguments.get(0) instanceof Map<?, ?> request)
                 || !(request.get("uri") instanceof String uri)
                 || !(request.get("digest") instanceof String expected)
-                || !(request.get("version") instanceof Number version)) {
+                || !(request.get("version") instanceof Number version)
+                || (request.containsKey("syntaxOnly") && !(request.get("syntaxOnly") instanceof Boolean))) {
             throw new IllegalArgumentException("invalid-diagnostic-request");
         }
         ICompilationUnit unit = JDTUtils.resolveCompilationUnit(uri);
@@ -42,8 +43,12 @@ public final class WorkingCopyDiagnostics implements IDelegateCommandHandler {
             throw new IllegalStateException("document-content-modified");
         }
         List<Map<String, Object>> diagnostics = new ArrayList<>();
+        boolean syntaxOnly = Boolean.TRUE.equals(request.get("syntaxOnly"));
         PositionIndex positions=new PositionIndex(text);
         for (IProblem problem : ast.getProblems()) {
+            // Syntax-only diagnostics must never expose semantic/type results from
+            // an ABI that may be stale while the Kotlin model is rebuilding.
+            if (syntaxOnly && (problem.getID() & IProblem.Syntax) == 0) continue;
             if (diagnostics.size() >= 512) break;
             int start = problem.getSourceStart();
             int end = problem.getSourceEnd() + 1;

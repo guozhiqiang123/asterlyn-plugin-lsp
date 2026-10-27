@@ -127,6 +127,17 @@ export async function startKotlin({ model, stateDirectory, java, component, over
   const uniqueClasspath = [...new Set(classpath)];
   await createClasspathConfig(configRoot, uniqueClasspath);
   const layout = await componentLayout(component);
+  // Seed the complete captured overlay set before compiler initialization. Otherwise opening a
+  // Kotlin document starts lint while a later Java overlay replaces its compiler/classpath.
+  const overlayEntries = overlays instanceof Map ? [...overlays.entries()] : Object.entries(overlays);
+  for (const [original, overlay] of overlayEntries) {
+    const source = uriPath(original) ?? resolve(original);
+    const target = mappings.originalToPrivate.get(source) ?? mappings.originalToPrivate.get(source.toLowerCase());
+    if (!target) continue;
+    const text = String(overlay.text ?? "");
+    if (Buffer.byteLength(text) > MAX_SOURCE_FILE_BYTES) throw Error("kotlin-overlay-size-bound");
+    await writeFile(target, text);
+  }
   const jars = (await readdir(layout.lib)).filter((name) => name.endsWith(".jar")).map((name) => join(layout.lib, name));
   const serverJar = join(layout.lib, "server-1.3.13.jar");
   const runtimeClasspath = [serverJar, ...jars.filter((jar) => jar !== serverJar)].join(delimiter);
@@ -150,8 +161,9 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     const privatePath = uriPath(privateUri);
     const state = privatePath && openKotlin.get(privatePath);
     if (!state || message.params.version !== state.privateVersion) return null;
-    diagnostics.set(privatePath, { privateVersion: state.privateVersion, hostVersion: state.hostVersion, contextEpoch: state.contextEpoch });
-    return map.output({ ...message.params, version: state.hostVersion });
+    const params = map.output({ ...message.params, version: state.hostVersion });
+    diagnostics.set(privatePath, { privateVersion: state.privateVersion, hostVersion: state.hostVersion, contextEpoch: state.contextEpoch, params });
+    return params;
   };
   const peer = {
     request: (method, params, timeout) => upstream.request(method, map.input(params), timeout).then(map.output),
@@ -215,9 +227,13 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     if (!privatePath) throw new Error("kotlin-overlay-outside-model");
     const text = String(overlay.text ?? "");
     if (Buffer.byteLength(text) > MAX_SOURCE_FILE_BYTES) throw new Error("kotlin-overlay-size-bound");
-    await writeFile(privatePath, text);
+    const previousText = overlayState.get(privatePath) ?? await readFile(privatePath, "utf8");
+    const unchanged = previousText === text;
+    if (!unchanged) await writeFile(privatePath, text);
     overlayState.set(privatePath, text);
     if (extname(privatePath) === ".java") {
+      // Opening/replaying a saved Java buffer is not a Java classpath change.
+      if (unchanged) return;
       upstream.notify("workspace/didChangeWatchedFiles", { changes: [{ uri: uriFor(privatePath), type: 2 }] });
       kickKotlinRefresh();
       return;
@@ -225,6 +241,7 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     if (extname(privatePath) !== ".kt" && extname(privatePath) !== ".kts") return;
     const prior = openKotlin.get(privatePath);
     const hostVersion = Number(overlay.version ?? prior?.hostVersion ?? 0);
+    if (prior?.text === text && prior.hostVersion === hostVersion) return;
     const privateVersion = (prior?.privateVersion ?? 0) + 1;
     if (prior) upstream.notify("textDocument/didChange", { textDocument: { uri: uriFor(privatePath), version: privateVersion }, contentChanges: [{ text }] });
     else upstream.notify("textDocument/didOpen", { textDocument: { uri: uriFor(privatePath), languageId: "kotlin", version: privateVersion, text } });
@@ -260,8 +277,10 @@ export async function startKotlin({ model, stateDirectory, java, component, over
       if (previous?.size === metadata.size && previous.mtimeMs === metadata.mtimeMs) continue;
       counter.bytes += metadata.size - (previous?.size ?? 0); if(counter.bytes > MAX_SOURCE_BYTES) throw Error("kotlin-source-size-bound");
       const text = await readFile(originalPath, "utf8");
-      await writeFile(privatePath, text);
       mappings.fileStats.set(originalPath,{size:metadata.size,mtimeMs:metadata.mtimeMs});
+      // Saving an overlay can change mtime while leaving the already-current shadow unchanged.
+      if (await readFile(privatePath, "utf8").catch(() => null) === text) continue;
+      await writeFile(privatePath, text);
       changes.push({uri:uriFor(privatePath),type:2});
     }
     if (changes.length) {
@@ -269,6 +288,17 @@ export async function startKotlin({ model, stateDirectory, java, component, over
       kickKotlinRefresh();
     }
     return changes.length;
+  };
+  // didOpen can publish immediately. Subscribe/cache before initial overlays, rather than losing
+  // the first versioned report while the caller is still awaiting creation of this session.
+  peer.on("notification", message => {
+    if (message.method === "textDocument/publishDiagnostics") configuration.onDiagnostics?.(message.params);
+  });
+  const currentDiagnostics = original => {
+    const path = uriPath(original) ?? resolve(original);
+    const privatePath = mappings.originalToPrivate.get(path) ?? mappings.originalToPrivate.get(path.toLowerCase());
+    const state = openKotlin.get(privatePath), report = diagnostics.get(privatePath);
+    return state && report && state.privateVersion === report.privateVersion && state.hostVersion === report.hostVersion && state.contextEpoch === report.contextEpoch ? report.params : null;
   };
   const rootUri = uriFor(shadowRoot);
   try { await upstream.request("initialize", {
@@ -279,12 +309,11 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     initializationOptions: { settings: configuration.settings ?? {}, workspaceFolders: [rootUri], bundles: [], extendedClientCapabilities: {} },
   }, 90000);
   upstream.notify("initialized", {});
-  const overlayEntries = overlays instanceof Map ? [...overlays.entries()] : Object.entries(overlays);
   for (const [original, overlay] of overlayEntries) {
     await applyOverlay(original, overlay);
   }
   } catch (error) { await close(); throw error; }
-  return { peer, close, applyOverlay, closeOverlay, refreshSources, distributionRoot: layout.root, privateRoot: shadowRoot, classpath: uniqueClasspath };
+  return { peer, close, applyOverlay, closeOverlay, currentDiagnostics, refreshSources, distributionRoot: layout.root, privateRoot: shadowRoot, classpath: uniqueClasspath };
 }
 
 export default { startKotlin };

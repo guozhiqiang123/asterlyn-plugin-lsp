@@ -13,7 +13,7 @@ older result to be discarded instead of being relabelled as current.
 The patched development JAR was built from the bundled Kotlin compiler 2.1.0 and the server's
 published libraries. This is a reproducible patch build of the complete upstream server JAR;
 it is not a claim that the complete upstream source tree was rebuilt. Its reproducible SHA-256 is
-`26d0ec253d0bccb858f25ffb6603f2d42c9e8fbb94c850750194a036f86d53a8` and its size is 480,821 bytes.
+`4b18acbc4d719598f1163accc54d5097536679b94718d86445a06cc956c7faa3` and its size is 480,648 bytes.
 The reproducible source changes are in `diagnostics-version.patch` and `uri-parsing.patch`.
 The URI patch preserves correctly encoded file URIs before trying the legacy decoding fallback;
 Chinese, percent signs, spaces and emoji no longer break initialization. The complete upstream
@@ -50,3 +50,7 @@ Workspace source discovery remains available for cross-file semantic resolution;
 continue to lint the exact open document and publish version-checked diagnostics. Closed-file
 workspace-wide diagnostics/index precompilation are not performed proactively. This prevents a large
 module closure from filling the JVM heap before a navigation request.
+
+Java watched-file refresh still clears all old binding contexts, but no longer eagerly compiles
+every discovered Kotlin file. Current document requests compile against the refreshed Java source
+path, preserving inferred-return-type changes without the full-workspace body compilation.

@@ -139,3 +139,46 @@ then Kotlin→common Java definition took 47 ms, hover passed, no OOM (22,771 ms
 Candidate 0.3.2: 5,074,033 bytes, SHA-256
 `de28333692faf4767701ac1cc4613ec724e138234a6de30aaab87ebc7751ab0f`.
 The final full packaged-project and installed gates remain in the host recovery record.
+
+
+## Large-project incremental recovery (0.3.4 candidate)
+
+Earlier 0.3.1–0.3.3 bundles were local candidates, not installed acceptance. A larger heap alone
+did not solve eager workspace compilation. The pinned fwcd patch now keeps source discovery and
+Java-change binding invalidation, but defers closed-document body compilation until requested.
+The reproducible patched JAR is 480,648 bytes, SHA-256
+`4b18acbc4d719598f1163accc54d5097536679b94718d86445a06cc956c7faa3`.
+
+Each Kotlin session seeds the captured open Java/Kotlin text into its private source view before
+initialization, then opens versioned documents. Applying Java overlays after an initial Kotlin
+didOpen used to dispose/recreate the compiler during that first lint and lose its diagnostic.
+The diagnostic listener/cache is installed before those opens; reads require the exact current
+private version, host version and Java context epoch. Pending overlay batches are drained before
+analysis, and old snapshots are still rejected. Business sources are never overwritten.
+
+KAPT records the actual effective-input digests. Opening an unchanged saved file therefore keeps
+the existing Java ABI, while content changes invalidate it. Java navigation waits for current ABI
+by returning the standard ContentModified response, rather than occupying a request until timeout.
+While Kotlin ABI is rebuilding or temporarily invalid, the first-party JDT bridge returns only
+current-working-copy syntax diagnostics; full type diagnostics refresh after the matching ABI is
+committed. Syntax-only reports are explicitly accompanied by the partial-analysis status. This
+is not a claim that type checking completed with stale Kotlin stubs.
+
+The bridge is 7,859 bytes, SHA-256
+`caa39507e93acf7b5c2567a6bf137e20a2ff6fcc9ddbe2771daed17cdddf4d6c`.
+Its direct JDT regression checks syntax-vs-type categories, version/digest equality and rejection
+of an incorrect digest. The real mixed fixture additionally covers saved-buffer reopen, Java
+syntax feedback with an invalid Kotlin overlay, both unsaved signature directions, model refresh,
+module visibility and owned Kotlin-process crash recovery. Final package and installed receipts
+are recorded in the host recovery record after acceptance.
+
+Candidate archive: 5,078,737 bytes, SHA-256
+`9f8c14cd4bf9f8d581af2dc43e88fe400a543a0aa946dd6bb9398107c306c561`.
+The exact extracted archive passes all 12 mixed-fixture checks including current syntax feedback
+with invalid Kotlin (37 ms), saved-buffer reopen without ABI invalidation (45 ms), model replacement
+and crash recovery. Under concurrent large-project import/native compilation, ready took 15.008 s,
+whole regression 86.478 s, peak RSS 1,305,344 KiB, shutdown 890 ms. The earlier source-only run took
+35.779 s; these local samples show machine-load sensitivity, not a p95/SLA claim.
+Typecheck, six ordinary tests, archive inspection and native helper/desktop contribution routing pass.
+Initial KAPT preparation still precedes JDT startup and can take minutes in large workspaces; the
+responsive syntax path applies to later edits after backend readiness.

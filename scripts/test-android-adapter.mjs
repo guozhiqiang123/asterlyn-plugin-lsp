@@ -45,10 +45,10 @@ const position = (text, symbol, end = false) => {
 };
 const wait = async (condition, timeout = 150000) => {const until = Date.now() + timeout; while (!condition()) {if (Date.now() > until) throw Error("acceptance-timeout"); await pause(50);}};
 const semantic = async (method, name, symbol, extra = {}) => {
-  const doc = docs.get(name), started = Date.now();
+  const doc = docs.get(name), started = Date.now(), deadline = started + 30000;
   for (let attempt = 0; ; attempt++) {
     try {const result = await peer.request(`textDocument/${method}`, {textDocument: {uri: doc.uri}, position: position(doc.text, symbol, method === "completion"), ...extra}, 30000); summaries.timing[`${method}-${name}`] = Date.now() - started; return result;}
-    catch (error) {if (attempt >= 8) throw error; await pause(250);}
+    catch (error) {if (Date.now() >= deadline) throw error; await pause(250);}
   }
 };
 const first = value => Array.isArray(value) ? value[0] : value;
@@ -71,6 +71,13 @@ try {
   assert.match(first(await semantic("definition", "JavaUse.java", "greeting"))?.uri ?? "", /LibraryValue\.kt$/u);
   assert.match(first(await semantic("definition", "MainActivity.kt", "label(this)"))?.uri ?? "", /JavaBridge\.java$/u);
   summaries.checks.bidirectionalDefinition = true;
+  const savedJava = docs.get("JavaUse.java"), savedStart = Date.now();
+  peer.notify("textDocument/didClose", {textDocument: {uri: savedJava.uri}});
+  peer.notify("textDocument/didOpen", {textDocument: savedJava});
+  const reopened = await peer.request("textDocument/definition", {textDocument: {uri: savedJava.uri}, position: position(savedJava.text, "greeting")}, 10000);
+  assert.match(first(reopened)?.uri ?? "", /LibraryValue\.kt$/u);
+  summaries.checks.savedBufferReopenKeepsJavaAbi = true;
+  summaries.timing.savedBufferReopenMs = Date.now() - savedStart;
   assert.ok(await semantic("hover", "JavaUse.java", "greeting"));
   assert.ok(await semantic("hover", "MainActivity.kt", "label(this)")); summaries.checks.hover = true;
   const sdk = first(await semantic("definition", "JavaUse.java", "getPackageName"));
@@ -94,6 +101,14 @@ try {
   const diagnostics = await peer.request("textDocument/diagnostic", {textDocument: {uri: dirtyDoc.uri}}, 30000);
   assert.ok(diagnostics.items.length); assert.ok(diagnosticEvents.some(event => event.uri === dirtyDoc.uri && event.version === dirtyDoc.version && event.count > 0));
   summaries.checks.currentVersionUnsavedDiagnostic = true;
+  const validJava = docs.get("JavaUse.java").text;
+  change("JavaUse.java", `${validJava}\nint broken = ;\n`);
+  const javaSyntaxStart = Date.now();
+  const javaSyntax = await peer.request("textDocument/diagnostic", {textDocument: {uri: docs.get("JavaUse.java").uri}}, 15000);
+  assert.ok(javaSyntax.items.length, "Java syntax diagnostics remain available with an invalid Kotlin ABI");
+  summaries.checks.javaSyntaxWhileKotlinInvalid = true;
+  summaries.timing.javaSyntaxWhileKotlinInvalidMs = Date.now() - javaSyntaxStart;
+  change("JavaUse.java", validJava);
   // Restore a compilable dirty buffer before model replacement. It is never saved to the fixture.
   change("LibraryValue.kt", dirtyDoc.text.replace(/\nval brokenValue = ;\n$/u, ""));
   const previous = readyCount; modelPath = resolve(prodModel); generation++;

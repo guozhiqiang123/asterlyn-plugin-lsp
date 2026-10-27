@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, stat, writeFile, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { createHash } from "node:crypto";
 import { delimiter, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -46,6 +47,7 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
   const perModuleRoots = [];
   const originMaps = new Map();
   const originPaths = new Map();
+  const sourceDigests = new Map();
   const inventoryBudget = {entries:0};
   let sourceCount = 0, sourceBytes = 0;
   const modulesByName = new Map(model.modules.map((item) => [item.module, item]));
@@ -81,6 +83,9 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
         const bytes = Buffer.byteLength(text);
         if (sourceCount > MAX_FILES || bytes > MAX_FILE_BYTES || sourceBytes + bytes > MAX_BYTES) throw new Error("kapt-source-size-bound");
         sourceBytes += bytes;
+        const digest = createHash("sha256").update(text).digest("hex"), key = uri(source);
+        if (sourceDigests.has(key) && sourceDigests.get(key) !== digest) throw Error("kapt-source-changed-during-generation");
+        sourceDigests.set(key, digest);
         await writeFile(target, text);
         originPaths.set(target, source);
         sourceOwners.set(target, sourceModule.module);
@@ -116,7 +121,7 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
     });
     perModuleRoots.push({ module: module.module ?? module.name ?? `module-${index}`, stubRoot: stubsRoot, classRoot: classesRoot, metadata: ownMetadata, allMetadata: metadata });
   }
-  return { root, perModuleRoots, metadata: originMaps, mapOriginByKey: async (stubUri, descriptor) => {
+  return { root, perModuleRoots, sourceDigests, metadata: originMaps, mapOriginByKey: async (stubUri, descriptor) => {
     const stubPath = asPath(stubUri);
     const metadataFile = originMaps.has(stubPath.replace(/\.java$/, ".kapt_metadata"))
       ? stubPath.replace(/\.java$/, ".kapt_metadata")

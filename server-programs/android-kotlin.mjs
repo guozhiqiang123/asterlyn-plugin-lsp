@@ -1,4 +1,4 @@
-import {cp, mkdir, readdir, rm, stat} from "node:fs/promises";
+import {cp, lstat, mkdir, readFile, readdir, rm, stat} from "node:fs/promises";
 import {join, resolve, sep} from "node:path";
 import {fileURLToPath, pathToFileURL} from "node:url";
 import {createHash} from "node:crypto";
@@ -16,7 +16,7 @@ async function findJar(root, name) {
 }
 
 /** One private source view per module dependency closure; at most two lazy Kotlin JVMs. */
-export async function prepareAndroidKotlin({model, stateDirectory, options, documents = new Map(), onDiagnostics, onChanged, onBackendReady, onError = () => {}}) {
+export async function prepareAndroidKotlin({model, stateDirectory, options, documents = new Map(), onDiagnostics, onChanged, onBackendReady, onJavaAbiReady = () => {}, onError = () => {}}) {
   const sessionRoot = join(pathOf(stateDirectory), `android-kotlin-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   await mkdir(sessionRoot, {recursive: true});
   const abort = new AbortController(), compilerRoot = pathOf(options.components["kotlin-compiler-bridge"].root);
@@ -75,7 +75,7 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
     if (builtRevision === revision && latest) return latest;
     if (!kaptPromise) {
       const target = revision;
-      kaptPromise = regenerate().then(result => {builtRevision = target; return result;}).finally(() => {kaptPromise = null;});
+      kaptPromise = regenerate().then(result => {builtRevision = target; if (builtRevision === revision) onJavaAbiReady(); return result;}).finally(() => {kaptPromise = null;});
     }
     await kaptPromise;
     return builtRevision === revision ? latest : ensureAbi();
@@ -111,12 +111,11 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
           entries.delete(id); void entry.service?.close(); onError(Error("kotlin-backend-exited"));
         }
       };
-      const service = await startKotlin({model: {...model, modules: closure(id)}, stateDirectory: join(sessionRoot, `kotlin-${moduleHash(id)}`), java, component: {distributionRoot: languageRoot, patchJar}, overlays: initialDocs, configuration: {onError, onClosed}});
+      const service = await startKotlin({model: {...model, modules: closure(id)}, stateDirectory: join(sessionRoot, `kotlin-${moduleHash(id)}`), java, component: {distributionRoot: languageRoot, patchJar}, overlays: initialDocs, configuration: {onError, onClosed, onDiagnostics: params => {
+        if (!abort.signal.aborted && moduleFor(params.uri) === id) onDiagnostics?.(params);
+      }}});
       entry.service = service;
       if (abort.signal.aborted) {await service.close(); throw Error("android-language-session-ended");}
-      service.peer.on("notification", message => {
-        if (!abort.signal.aborted && message.method === "textDocument/publishDiagnostics" && moduleFor(message.params.uri) === id) onDiagnostics?.(message.params);
-      });
       for (const [key, value] of docsFor(id)) await service.applyOverlay(key, value);
       for (const key of initialDocs.keys()) if (!(documents instanceof Map ? documents.has(key) : key in documents)) await service.closeOverlay(key);
       if (!abort.signal.aborted) onBackendReady?.();
@@ -131,16 +130,25 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
   const applyOverlay = async (file, value) => {
     const previous = documents instanceof Map ? documents.get(file) : documents[file];
     if (previous?.version === value?.version && previous?.text === value?.text) return;
+    // A newly opened saved buffer was already part of the imported source model. Register its
+    // version/overlay ownership, but do not regenerate every module's ABI just for opening it.
+    const matchesImportedInput = latest && builtRevision === revision && !kaptPromise
+      && latest.sourceDigests.get(uri(pathOf(file))) === createHash("sha256").update(String(value?.text ?? "")).digest("hex");
+    const changed = previous ? previous.text !== value?.text : !matchesImportedInput;
     if (documents instanceof Map) documents.set(file, {...value}); else documents[file] = {...value};
-    revision++;
+    if (changed) revision++;
     for (const entry of entries.values()) if (entry.service && !entry.starting && includes(entry.id, file)) await entry.service.applyOverlay(file, value);
-    scheduleAbi();
+    if (changed) scheduleAbi();
   };
   const closeOverlay = async file => {
+    const previous = documents instanceof Map ? documents.get(file) : documents[file];
+    if (!previous) return;
+    let changed = true;
+    try {const path = pathOf(file), info = await lstat(path); if (info.isFile() && !info.isSymbolicLink() && info.size <= 2 * 1024 * 1024) changed = await readFile(path, "utf8") !== previous.text;} catch {}
     if (documents instanceof Map) documents.delete(file); else delete documents[file];
-    revision++;
+    if (changed) revision++;
     for (const entry of entries.values()) if (entry.service && !entry.starting && includes(entry.id, file)) await entry.service.closeOverlay(file);
-    scheduleAbi();
+    if (changed) scheduleAbi();
   };
   const refreshSources = async () => {
     let changes = 0;
@@ -168,5 +176,6 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
     await Promise.all([...entries.values()].map(closeEntry));
     await kaptPromise?.catch(() => {}); await rm(sessionRoot, {recursive: true, force: true});
   };
-  return {extraSources: stableRoots, startIfNeeded, ensureDocument: startIfNeeded, applyOverlay, closeOverlay, refreshSources, awaitJavaAbi: ensureAbi, request, mapJavaDefinition, close};
+  const currentDiagnostics = file => entries.get(moduleFor(file))?.service?.currentDiagnostics(file) ?? null;
+  return {extraSources: stableRoots, startIfNeeded, ensureDocument: startIfNeeded, currentDiagnostics, applyOverlay, closeOverlay, refreshSources, awaitJavaAbi: ensureAbi, javaAbiCurrent: () => builtRevision === revision && latest !== null, request, mapJavaDefinition, close};
 }

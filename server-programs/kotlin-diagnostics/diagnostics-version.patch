@@ -103,3 +103,27 @@ index 0f8ab9c..0000000 100644
 +        LOG.info("Skipping eager workspace lint; waiting for opened documents")
 
         val serverInfo = ServerInfo("Kotlin Language Server", VERSION)
+
+diff --git a/server/src/main/kotlin/org/javacs/kt/SourcePath.kt b/server/src/main/kotlin/org/javacs/kt/SourcePath.kt
+index 3aa6b2e..0000000 100644
+--- a/server/src/main/kotlin/org/javacs/kt/SourcePath.kt
++++ b/server/src/main/kotlin/org/javacs/kt/SourcePath.kt
+@@ -338,11 +338,12 @@ class SourcePath(
+     /**
+      * Recompiles all source files that are initialized.
+      */
+     fun refresh() {
+-        val initialized = files.values.any { it.parsed != null }
+-        if (initialized) {
+-            LOG.info("Refreshing source path")
+-            files.values.forEach { it.clean() }
+-            files.values.forEach { it.compile() }
+-        }
++        if (files.values.any { it.parsed != null }) {
++            LOG.info("Invalidating source path; compilation is deferred until a document is requested")
++            // Java classpath changes invalidate every Kotlin binding context, but
++            // compiling every discovered workspace file here can exhaust the JVM
++            // on large Android projects. compileFiles() rebuilds the active set.
++            files.values.forEach { it.clean() }
++        }
+     }

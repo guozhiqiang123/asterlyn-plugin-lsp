@@ -60,6 +60,7 @@ const compiler = ["-cp", classpath, "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler"
   join(scratch, "source/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt"),
   join(scratch, "source/server/src/main/kotlin/org/javacs/kt/KotlinTextDocumentService.kt"),
   join(scratch, "source/server/src/main/kotlin/org/javacs/kt/KotlinLanguageServer.kt"),
+  join(scratch, "source/server/src/main/kotlin/org/javacs/kt/SourcePath.kt"),
   join(scratch, "source/shared/src/main/kotlin/org/javacs/kt/util/URIs.kt")];
 execFileSync(java, compiler, { stdio: "inherit" });
 await mkdir(resolve(output, ".."), { recursive: true });

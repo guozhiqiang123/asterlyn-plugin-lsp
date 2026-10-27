@@ -80,12 +80,16 @@ try {
   }
   for (const language of ["java", "kotlin"]) {
     const doc = [...docs.values()].find(doc => doc.languageId === language), original = doc.text;
+    const baseline = await request("diagnostic", doc, {});
+    const injectedLine = original.split("\n").length, started = Date.now();
     doc.text += language === "java" ? "\nclass AsterlynUnsavedProbe { void invalid( }\n" : "\nval asterlynUnsavedProbe = ;\n";
     doc.version++;
     peer.notify("textDocument/didChange", {textDocument: {uri: doc.uri, version: doc.version}, contentChanges: [{text: doc.text}]});
     const result = await request("diagnostic", doc, {symbol: "Asterlyn"});
     assert.ok(result.items.length, "unsaved syntax diagnostics are empty");
-    summary.checks.push({language, dirtyDiagnostics: result.items.length, version: doc.version, publishedCurrentVersion: diagnostics.some(item => item.uri === doc.uri && item.version === doc.version && item.count > 0)});
+    const injectedDiagnostics = result.items.filter(item => item.range?.end?.line >= injectedLine).length;
+    assert.ok(injectedDiagnostics, "diagnostics do not cover the injected unsaved syntax error");
+    summary.checks.push({language, baselineDiagnostics: baseline.items.length, dirtyDiagnostics: result.items.length, injectedDiagnostics, durationMs: Date.now() - started, version: doc.version, publishedCurrentVersion: diagnostics.some(item => item.uri === doc.uri && item.version === doc.version && item.count > 0)});
     console.log(JSON.stringify({stage: "dirty-diagnostics-checked", ...summary.checks.at(-1)}));
     doc.text = original; doc.version++;
     peer.notify("textDocument/didChange", {textDocument: {uri: doc.uri, version: doc.version}, contentChanges: [{text: original}]});

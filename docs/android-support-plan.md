@@ -59,3 +59,7 @@ Kotlin 官方 Alpha/实验性 Android 支持、部分闭源及独立包条款需
 ## 2026-10-27 协作实施
 
 以宿主 [插件构建模型计划](../../asterlyn/docs/engineering/2026-10-27-plugin-build-model-cooperation-plan.md)（文档提交 `6b7df57`）和 ADR-0035 为准。C1 先交付可见依赖锁及原生门禁，C2 模型通道，C3 Android 提取，C4 本插件消费。未验证的 Kotlin/JVM profile 不提前注册。
+
+### C1 验收（2026-10-27）
+
+0.2.1 真实包声明 `pluginDependencies` 和 Android Gradle >=0.5.10、<1.0.0，SDK 精确升级至宿主开发制品 1.13.0。插件 check、5 项测试、build、打包和 inspector 均通过。包 4,579,774 B，SHA-256 `c341c81055601c150556973ea45c0189fb64a92dbbfc9fe7c1ad8f63fbfb8486`。宿主验证了原生事务、旧包回退最低约束、管理页锁/解除锁及跨窗口同步。TS/JS/Rust provider 保持原行为，尚不发布 Android profile。

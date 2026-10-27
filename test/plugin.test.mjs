@@ -16,9 +16,9 @@ const context = {
 
 test("identity and schema-3 metadata are stable", () => {
   assert.equal(LSP_PLUGIN.id, LSP_PLUGIN_ID);
-  assert.equal(LSP_PLUGIN.version, "0.2.0");
+  assert.equal(LSP_PLUGIN.version, "0.2.1");
   assert.equal(LSP_PLUGIN_MANIFEST.schemaVersion, 3);
-  assert.deepEqual(LSP_PLUGIN_MANIFEST.capabilities, ["languageServices"]);
+  assert.deepEqual(LSP_PLUGIN_MANIFEST.capabilities, ["languageServices", "pluginDependencies"]);
   assert.deepEqual(LSP_PLUGIN_MANIFEST.permissions, ["host.language-services.execute"]);
 });
 
@@ -49,4 +49,9 @@ test("activation contributes independent TypeScript and Rust declarations and di
   assert.deepEqual(contributions[1], { kind: "language-service", id: "rust", label: "Rust", serverId: "rust-analyzer", languageIds: ["rust"], extensions: [".rs"], rootMarkers: ["Cargo.toml"] });
   activation.dispose();
   assert.equal(disposed, 2);
+});
+
+test("LSP enablement requires the Android build provider independently of document language", () => {
+  assert.deepEqual(LSP_PLUGIN_MANIFEST.dependencies, [{ id: "dev.asterlyn.android-gradle", minimum: "0.5.10", maximumExclusive: "1.0.0" }]);
+  assert.ok(Object.isFrozen(LSP_PLUGIN_MANIFEST.dependencies));
 });

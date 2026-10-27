@@ -30,7 +30,7 @@ export const LSP_PLUGIN_MANIFEST: SdkInstallablePluginPackageManifest = Object.f
   schemaVersion: 3,
   sdkMajor: 1,
   id: LSP_PLUGIN_ID,
-  version: "0.2.0",
+  version: "0.2.1",
   nameKey: "name",
   descriptionKey: "description",
   localization: Object.freeze({
@@ -47,7 +47,8 @@ export const LSP_PLUGIN_MANIFEST: SdkInstallablePluginPackageManifest = Object.f
     }),
   }),
   settings: Object.freeze([]),
-  capabilities: Object.freeze(["languageServices"]),
+  capabilities: Object.freeze(["languageServices", "pluginDependencies"]),
+  dependencies: Object.freeze([Object.freeze({ id: "dev.asterlyn.android-gradle", minimum: "0.5.10", maximumExclusive: "1.0.0" })]),
   permissions: Object.freeze(["host.language-services.execute"]),
   distribution: Object.freeze({
     repository: "guozhiqiang123/asterlyn-plugin-lsp",

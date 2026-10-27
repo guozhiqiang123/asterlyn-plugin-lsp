@@ -2,7 +2,7 @@
   "schemaVersion": 3,
   "sdkMajor": 1,
   "id": "dev.asterlyn.lsp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "nameKey": "name",
   "descriptionKey": "description",
   "localization": {
@@ -19,13 +19,34 @@
     }
   },
   "settings": [],
-  "capabilities": ["languageServices"],
-  "permissions": ["host.language-services.execute"],
+  "capabilities": [
+    "languageServices",
+    "pluginDependencies"
+  ],
+  "permissions": [
+    "host.language-services.execute"
+  ],
   "distribution": {
     "repository": "guozhiqiang123/asterlyn-plugin-lsp",
-    "runtime": { "protocol": 1, "entry": "runtime/plugin.js" },
-    "hostCompatibility": { "minimum": "0.1.21", "maximumExclusive": "0.2.0" },
-    "license": { "expression": "MIT", "file": "LICENSE" },
+    "runtime": {
+      "protocol": 1,
+      "entry": "runtime/plugin.js"
+    },
+    "hostCompatibility": {
+      "minimum": "0.1.21",
+      "maximumExclusive": "0.2.0"
+    },
+    "license": {
+      "expression": "MIT",
+      "file": "LICENSE"
+    },
     "integrity": {}
-  }
+  },
+  "dependencies": [
+    {
+      "id": "dev.asterlyn.android-gradle",
+      "minimum": "0.5.10",
+      "maximumExclusive": "1.0.0"
+    }
+  ]
 }

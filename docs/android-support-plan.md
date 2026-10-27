@@ -73,3 +73,10 @@ Kotlin 官方 Alpha/实验性 Android 支持、部分闭源及独立包条款需
 Java 已通过真实 AGP 模型的私有 Eclipse linked-source 视图，在 boostCleaner RecommendConfig.java 定义跳转到 SharedPref.java 且 hover 非空，源项目不写 Eclipse 元数据。后端适配将放在本插件 server-programs/，不写进宿主。JDT 无版本诊断不能直接标上当前版本；拟用本插件自有 JDT 扩展命令，在 working-copy 上同步 reconcile 并校验源文摘要，形成可证明的 pull 诊断，丢弃未经版本绑定的 push。依赖/SDK 来源走受控只读文档，不放开任意文件 URI。
 
 JDT/JVM 作为独立受控组件；宿主启动包不包含新的 JDK/AGP/JDT 分发。Kotlin 继续核验开源后端与独立发行条款，不以缺乏语义的文本搜索代替语言能力。
+
+## Android core implementation checkpoint (2026-10-27)
+
+Java/Kotlin core is implemented for host 0.1.22 and plugin 0.3.0. Historical JP0 failures above
+are retained as investigation history; current capabilities, pinned components, functional tests,
+resource samples and explicit remaining limits are in [Android acceptance](android-acceptance-2026-10-27.md).
+Groovy/DSL/resources and full large-project acceptance remain separate work.

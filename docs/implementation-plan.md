@@ -94,3 +94,10 @@ server distribution must be verified before changing SDK/manifest/resources. The
 ## Android JP0 执行（2026-10-26）
 
 用户已授权实施；见 [独立后端探针结果](android-feasibility.md)。当前候选的 Android 实际语义/独立发行闸门未通过，不新增 JVM descriptor。宿主先补通用传输基础；插件仍提供已验收的 TS/JS/Rust。
+
+## Android core implementation checkpoint (2026-10-27)
+
+Java/Kotlin core is implemented for host 0.1.22 and plugin 0.3.0. Historical JP0 failures above
+are retained as investigation history; current capabilities, pinned components, functional tests,
+resource samples and explicit remaining limits are in [Android acceptance](android-acceptance-2026-10-27.md).
+Groovy/DSL/resources and full large-project acceptance remain separate work.

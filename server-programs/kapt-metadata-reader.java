@@ -7,6 +7,7 @@ public final class KaptMetadataReader {
   private static final int MAX_BYTES = 8 * 1024 * 1024, MAX_ENTRIES = 20_000, MAX_STRING = 16 * 1024;
   public static void main(String[] args) throws Exception {
     if (args.length != 1) throw new IllegalArgumentException("manifest path required");
+    if (new File(args[0]).length()>4*1024*1024)throw new IOException("metadata manifest byte limit");
     List<String> files = java.nio.file.Files.readAllLines(new File(args[0]).toPath(), StandardCharsets.UTF_8);
     if (files.size() > MAX_ENTRIES) throw new IOException("metadata manifest limit");
     StringBuilder batch = new StringBuilder("{\"files\":{");
@@ -16,6 +17,7 @@ public final class KaptMetadataReader {
       String json = readFile(path);
       if (fileIndex > 0) batch.append(',');
       batch.append(quote(path)).append(':').append(json);
+      if(batch.length()>16*1024*1024)throw new IOException("metadata output limit");
     }
     System.out.println(batch.append("}}"));
   }

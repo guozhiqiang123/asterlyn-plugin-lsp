@@ -1,6 +1,6 @@
 import { cp, mkdir, readFile, readdir, stat, writeFile, lstat, realpath, rm } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { delimiter, dirname, extname, join, resolve, sep } from "node:path";
+import { delimiter, dirname, extname, join, resolve, sep, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { RpcPeer } from "./rpc.mjs";
 
@@ -41,6 +41,7 @@ async function copySources(sourceRoot, destination, mappings, counter) {
         mappings.originalToPrivate.set(original.toLowerCase(), privatePath);
         mappings.privateToOriginal.set(privatePath, original);
         mappings.privateToOriginal.set(privatePath.toLowerCase(), original);
+        mappings.fileStats.set(original, {size: metadata.size, mtimeMs: metadata.mtimeMs});
       }
     }
   };
@@ -102,7 +103,8 @@ export async function startKotlin({ model, stateDirectory, java, component, over
   const shadowRoot = join(state, `kotlin-source-view-${generation}`);
   const configRoot = join(state, "kotlin-config");
   await mkdir(shadowRoot, { recursive: true });
-  const mappings = { originalToPrivate: new Map(), privateToOriginal: new Map() };
+  const mappings = { originalToPrivate: new Map(), privateToOriginal: new Map(), fileStats: new Map() };
+  const sourceViews = [];
   for (const entry of await readdir(state, { withFileTypes: true })) {
     if (entry.name.startsWith("kotlin-source-view-") && entry.name !== `kotlin-source-view-${generation}`) await rm(join(state, entry.name), { recursive: true, force: true });
   }
@@ -112,9 +114,11 @@ export async function startKotlin({ model, stateDirectory, java, component, over
   for (let moduleIndex = 0; moduleIndex < modules.length; moduleIndex++) {
     const module = modules[moduleIndex];
     const moduleRoot = join(shadowRoot, `module-${moduleIndex}`);
-    for (let sourceIndex = 0; sourceIndex < module.sources.length; sourceIndex++) {
-      const sourceRoot = await realpath(resolve(module.sources[sourceIndex])).catch(() => resolve(module.sources[sourceIndex]));
-      try { if ((await stat(sourceRoot)).isDirectory()) await copySources(sourceRoot, join(moduleRoot, `source-${sourceIndex}`), mappings, counter); } catch (error) {
+    const sourceRoots = [...new Set([...module.sources, ...(module.generatedSources ?? [])])];
+    for (let sourceIndex = 0; sourceIndex < sourceRoots.length; sourceIndex++) {
+      const sourceRoot = await realpath(resolve(sourceRoots[sourceIndex])).catch(() => resolve(sourceRoots[sourceIndex]));
+      const privateRoot = join(moduleRoot, `source-${sourceIndex}`); sourceViews.push({sourceRoot, privateRoot});
+      try { if ((await stat(sourceRoot)).isDirectory()) await copySources(sourceRoot, privateRoot, mappings, counter); } catch (error) {
         if (error?.code !== "ENOENT") throw error;
       }
     }
@@ -131,7 +135,7 @@ export async function startKotlin({ model, stateDirectory, java, component, over
   const javaPath = asPath(java);
   configuration.onStart?.({ javaPath, runtimeClasspath: effectiveClasspath.split(delimiter).length, lib: layout.lib, patchJar });
   const env = { HOME: process.env.HOME ?? state, TMPDIR: process.env.TMPDIR ?? "/tmp", PATH: `${dirname(javaPath)}:/usr/bin:/bin`, JAVA_HOME: resolve(dirname(dirname(javaPath))), XDG_CONFIG_HOME: configRoot };
-  const child = spawn(javaPath, ["-Xmx2G", "-cp", effectiveClasspath, "org.javacs.kt.MainKt"], { cwd: shadowRoot, env, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(javaPath, ["-Xmx1024m", "-cp", effectiveClasspath, "org.javacs.kt.MainKt"], { cwd: shadowRoot, env, stdio: ["pipe", "pipe", "pipe"] });
   child.stderr.on("data", (chunk) => configuration.onStderr?.(String(chunk).slice(0, 4096)));
   const upstream = new RpcPeer(child.stdout, child.stdin);
   const map = mapUriFactory(mappings, shadowRoot);
@@ -155,7 +159,8 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     once: (event, listener) => { upstream.once(event, (message) => { const params = mapNotification(message); if (message.method === "textDocument/publishDiagnostics" && params === null) return; listener({ ...message, params, result: map.output(message.result) }); }); return peer; },
   };
   const onError = (error) => { if (configuration.onError) configuration.onError(error); };
-  upstream.on("fatal", onError).on("closed", () => configuration.onClosed?.());
+  upstream.on("fatal", error => {onError(error); void close();}).on("closed", () => configuration.onClosed?.());
+  child.on("error", onError);
   let closed = false;
   const close = async () => {
     if (closed) return;
@@ -190,7 +195,17 @@ export async function startKotlin({ model, stateDirectory, java, component, over
   const mappedPrivatePath = async (uri) => {
     const value = uriPath(uri) ?? resolve(uri);
     const canonical = await realpath(value).catch(() => resolve(value));
-    return mappings.originalToPrivate.get(canonical) ?? mappings.originalToPrivate.get(canonical.toLowerCase());
+    const existing = mappings.originalToPrivate.get(canonical) ?? mappings.originalToPrivate.get(canonical.toLowerCase());
+    if (existing) return existing;
+    const view = sourceViews.filter(view => isInside(view.sourceRoot, canonical)).sort((a,b)=>b.sourceRoot.length-a.sourceRoot.length)[0];
+    if (!view || !SOURCE_EXTENSIONS.has(extname(canonical))) return;
+    const metadata = await lstat(canonical);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > MAX_SOURCE_FILE_BYTES || ++counter.files > MAX_SOURCE_FILES || (counter.bytes += metadata.size) > MAX_SOURCE_BYTES) throw Error("kotlin-source-size-bound");
+    const target = join(view.privateRoot, relative(view.sourceRoot, canonical));
+    await mkdir(dirname(target), {recursive:true}); await cp(canonical,target);
+    mappings.originalToPrivate.set(canonical,target); mappings.privateToOriginal.set(target,canonical);
+    mappings.fileStats.set(canonical,{size:metadata.size,mtimeMs:metadata.mtimeMs});
+    return target;
   };
   const applyOverlay = async (uri, overlay = {}) => {
     const privatePath = await mappedPrivatePath(uri);
@@ -231,20 +246,26 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     }
   };
   const refreshSources = async () => {
-    const changedJava = [];
+    const changes = [];
     const seen = new Set();
     for (const [originalPath, privatePath] of mappings.originalToPrivate) {
       if (seen.has(privatePath) || overlayState.has(privatePath)) continue;
       seen.add(privatePath);
-      const text = await readFile(originalPath, "utf8").catch(() => null);
-      if (text === null) continue;
+      const metadata = await lstat(originalPath).catch(() => null), previous = mappings.fileStats.get(originalPath);
+      if (!metadata) {await rm(privatePath,{force:true}); changes.push({uri:uriFor(privatePath),type:3}); mappings.fileStats.delete(originalPath); mappings.originalToPrivate.delete(originalPath); mappings.originalToPrivate.delete(originalPath.toLowerCase()); mappings.privateToOriginal.delete(privatePath); mappings.privateToOriginal.delete(privatePath.toLowerCase()); continue;}
+      if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > MAX_SOURCE_FILE_BYTES) throw Error("kotlin-source-size-bound");
+      if (previous?.size === metadata.size && previous.mtimeMs === metadata.mtimeMs) continue;
+      counter.bytes += metadata.size - (previous?.size ?? 0); if(counter.bytes > MAX_SOURCE_BYTES) throw Error("kotlin-source-size-bound");
+      const text = await readFile(originalPath, "utf8");
       await writeFile(privatePath, text);
-      if (extname(privatePath) === ".java") changedJava.push({ uri: uriFor(privatePath), type: 2 });
+      mappings.fileStats.set(originalPath,{size:metadata.size,mtimeMs:metadata.mtimeMs});
+      changes.push({uri:uriFor(privatePath),type:2});
     }
-    if (changedJava.length) {
-      upstream.notify("workspace/didChangeWatchedFiles", { changes: changedJava });
+    if (changes.length) {
+      upstream.notify("workspace/didChangeWatchedFiles", { changes });
       kickKotlinRefresh();
     }
+    return changes.length;
   };
   const rootUri = uriFor(shadowRoot);
   try { await upstream.request("initialize", {

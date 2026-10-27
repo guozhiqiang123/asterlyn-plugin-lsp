@@ -13,12 +13,15 @@ older result to be discarded instead of being relabelled as current.
 The patched development JAR was built from the bundled Kotlin compiler 2.1.0 and the server's
 published libraries. This is a reproducible patch build of the complete upstream server JAR;
 it is not a claim that the complete upstream source tree was rebuilt. Its reproducible SHA-256 is
-`080db08585bb91a144c92b7f57b52064e1ce7f0482efa82b086308147f3f2d6f` and its size is 477,673 bytes.
-The reproducible source change is in `diagnostics-version.patch`. The normal Gradle build could not
+`a9028fd6b3717303709dfe01e52eca450f5b6de5347ea626729d96a1e1314756` and its size is 480,831 bytes.
+The reproducible source changes are in `diagnostics-version.patch` and `uri-parsing.patch`.
+The URI patch preserves correctly encoded file URIs before trying the legacy decoding fallback;
+Chinese, percent signs, spaces and emoji no longer break initialization. The complete upstream
+MIT license is retained as `LICENSE-MIT.txt`. The normal Gradle build could not
 be used in the probe environment because Maven Central returned HTTP 403 for the Kotlin Gradle
 plugin; compilation was performed directly with the exact compiler JAR already present in the
-published archive. A release build must run the locked dependency build and record its complete
-receipt before packaging.
+published archive. The patch build validates the complete pinned distribution receipt before compilation.
+This local development artifact is not an upstream or public plugin Release.
 
 The component remains development-only until its source build and license receipt are frozen in the
 plugin package. It does not add Java document handling to Kotlin; the host adapter must route Java

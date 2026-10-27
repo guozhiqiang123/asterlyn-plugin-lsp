@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { delimiter, extname, join, relative, resolve, sep } from "node:path";
@@ -12,11 +12,13 @@ const uri = (value) => pathToFileURL(resolve(value)).href;
 const inside = (root, value) => value === root || value.startsWith(`${root}${sep}`);
 const readerJar = new URL("./kapt-metadata-reader.jar", import.meta.url);
 
-async function sourceFiles(root, result = []) {
+async function sourceFiles(root, result = [], budget = {entries:0}, depth = 0) {
+  if (depth > 64 || ++budget.entries > 100000) throw Error("kapt-source-entry-bound");
   for (const entry of await readdir(root, { withFileTypes: true })) {
     const file = join(root, entry.name);
-    if (entry.isDirectory()) await sourceFiles(file, result);
-    else if (entry.isFile() && sourceExt.has(extname(entry.name))) result.push(file);
+    if (++budget.entries > 100000) throw Error("kapt-source-entry-bound");
+    if (entry.isDirectory()) await sourceFiles(file, result, budget, depth + 1);
+    else if (entry.isFile() && sourceExt.has(extname(entry.name))) {if(result.length>=MAX_FILES)throw Error("kapt-source-size-bound");result.push(file);}
   }
   return result;
 }
@@ -39,10 +41,12 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
   if (!model?.modules?.length || !compilerJar || !kaptJar) throw new Error("kapt-stub-configuration-invalid");
   const state = resolve(asPath(stateDirectory));
   const root = join(state, `kapt-stubs-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  try {
   const overlayMap = overlays instanceof Map ? overlays : new Map(Object.entries(overlays));
   const perModuleRoots = [];
   const originMaps = new Map();
   const originPaths = new Map();
+  const inventoryBudget = {entries:0};
   let sourceCount = 0, sourceBytes = 0;
   const modulesByName = new Map(model.modules.map((item) => [item.module, item]));
   const dependencyClosure = (module, seen = new Set()) => {
@@ -61,11 +65,10 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
     const inputs = [];
     const javaRoots = [];
     const sourceOwners = new Map();
-    for (const sourceModule of dependencyClosure(module)) for (let sourceIndex = 0; sourceIndex < (sourceModule.sources ?? []).length; sourceIndex++) {
-      const declared = sourceModule.sources[sourceIndex];
+    for (const sourceModule of dependencyClosure(module)) for (const [sourceIndex, declared] of [...new Set([...sourceModule.sources, ...(sourceModule.generatedSources ?? [])])].entries()) {
       const sourceRoot = resolve(declared);
       if (!(await stat(sourceRoot).catch(() => null))?.isDirectory()) continue;
-      const files = await sourceFiles(sourceRoot);
+      const files = await sourceFiles(sourceRoot, [], inventoryBudget);
       const ownerName = String(sourceModule.module ?? "module").replaceAll(/[^A-Za-z0-9_.-]/g, "_");
       const privateSourceRoot = join(sourcesRoot, ownerName, `source-${sourceIndex}`);
       if (files.some((file) => extname(file) === ".java")) javaRoots.push(privateSourceRoot);
@@ -105,7 +108,7 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
     const metadata = await allFiles(stubsRoot).then((files) => files.filter((file) => file.endsWith(".kapt_metadata")));
     const manifest = join(moduleRoot, "metadata-manifest.txt");
     await writeFile(manifest, `${metadata.join("\n")}\n`, "utf8");
-    const batch = JSON.parse((await exec(javaExecutable, ["-Xmx128m", "-jar", readerJar.pathname, manifest], { maxBuffer: 32 * 1024 * 1024, timeout: timeoutMs, killSignal: "SIGKILL", signal })).stdout);
+    const batch = JSON.parse((await exec(javaExecutable, ["-Xmx128m", "-jar", fileURLToPath(readerJar), manifest], { maxBuffer: 32 * 1024 * 1024, timeout: timeoutMs, killSignal: "SIGKILL", signal })).stdout);
     for (const file of metadata) if (batch.files[file]) originMaps.set(file, batch.files[file]);
     const ownMetadata = metadata.filter((file) => {
       const parsed = originMaps.get(file);
@@ -131,6 +134,7 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
     const position = { line: (before.match(/\n/g) ?? []).length, character: before.slice(before.lastIndexOf("\n") + 1).length };
     return { uri: uri(sourcePath), range: { start: position, end: position } };
   } };
+  } catch (error) {await rm(root,{recursive:true,force:true});throw error;}
 }
 
 export default { generateKaptStubs };

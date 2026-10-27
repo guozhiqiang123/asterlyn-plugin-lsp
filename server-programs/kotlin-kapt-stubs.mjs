@@ -42,6 +42,12 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
   const perModuleRoots = [];
   const originMaps = new Map();
   const originPaths = new Map();
+  const modulesByName = new Map(model.modules.map((item) => [item.module, item]));
+  const dependencyClosure = (module, seen = new Set()) => {
+    if (!module || seen.has(module.module)) return [];
+    seen.add(module.module);
+    return [module, ...(module.projectDependencies ?? []).flatMap((dependency) => dependencyClosure(modulesByName.get(dependency.module), seen))];
+  };
   for (let index = 0; index < model.modules.length; index++) {
     const module = model.modules[index];
     const moduleRoot = join(root, `module-${index}`);
@@ -52,12 +58,14 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
     await Promise.all([mkdir(sourcesRoot, { recursive: true }), mkdir(stubsRoot, { recursive: true }), mkdir(classesRoot, { recursive: true }), mkdir(generatedRoot, { recursive: true })]);
     const inputs = [];
     const javaRoots = [];
-    for (let sourceIndex = 0; sourceIndex < (module.sources ?? []).length; sourceIndex++) {
-      const declared = module.sources[sourceIndex];
+    const sourceOwners = new Map();
+    for (const sourceModule of dependencyClosure(module)) for (let sourceIndex = 0; sourceIndex < (sourceModule.sources ?? []).length; sourceIndex++) {
+      const declared = sourceModule.sources[sourceIndex];
       const sourceRoot = resolve(declared);
       if (!(await stat(sourceRoot).catch(() => null))?.isDirectory()) continue;
       const files = await sourceFiles(sourceRoot);
-      const privateSourceRoot = join(sourcesRoot, `source-${sourceIndex}`);
+      const ownerName = String(sourceModule.module ?? "module").replaceAll(/[^A-Za-z0-9_.-]/g, "_");
+      const privateSourceRoot = join(sourcesRoot, ownerName, `source-${sourceIndex}`);
       if (files.some((file) => extname(file) === ".java")) javaRoots.push(privateSourceRoot);
       for (const source of files) {
         if (inside(state, source)) continue;
@@ -66,10 +74,11 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
         const text = overlayMap.get(uri(source))?.text ?? await readFile(source, "utf8");
         await writeFile(target, text);
         originPaths.set(target, source);
+        sourceOwners.set(target, sourceModule.module);
         if (extname(target) === ".kt" || extname(target) === ".kts") inputs.push(target);
       }
     }
-    const classpath = [...(module.bootClasspath ?? []), ...(module.compileClasspath ?? [])].filter((item) => typeof item === "string").map(resolve);
+    const classpath = [...(module.bootClasspath ?? []), ...(module.compileClasspath ?? [])].filter((item) => typeof item === "string").map((item) => resolve(item));
     // Compiler and KAPT must precede any distribution compiler JAR. The fwcd
     // server bundle contains a non-embeddable compiler copy; placing it first
     // makes the public KAPT registrar fail with AbstractMethodError.
@@ -88,7 +97,11 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
       const parsed = JSON.parse((await exec(javaExecutable, [reader.pathname, file])).stdout);
       originMaps.set(file, parsed);
     }
-    perModuleRoots.push({ module: module.module ?? module.name ?? `module-${index}`, stubRoot: stubsRoot, classRoot: classesRoot, metadata });
+    const ownMetadata = metadata.filter((file) => {
+      const parsed = originMaps.get(file);
+      return Object.values(parsed.lines ?? {}).some((entry) => sourceOwners.get(entry.path) === module.module);
+    });
+    perModuleRoots.push({ module: module.module ?? module.name ?? `module-${index}`, stubRoot: stubsRoot, classRoot: classesRoot, metadata: ownMetadata, allMetadata: metadata });
   }
   return { root, perModuleRoots, metadata: originMaps, mapOriginByKey: async (stubUri, descriptor) => {
     const stubPath = asPath(stubUri);

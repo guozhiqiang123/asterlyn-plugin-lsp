@@ -16,6 +16,8 @@
 
 Kotlin 官方 Alpha/实验性 Android 支持、部分闭源及独立包条款需要单独验证；不从 Android Studio 提取代码/资源，不把 VS Code 扩展操作当通用协议。若统一 Java/Kotlin 后端通过独立分发与能力闸门，可减少索引；否则分开接入并明确双向互操作限制，不默默切换后端。
 
+当前 Kotlin 候选的实测记录见 [Kotlin backend feasibility](kotlin-feasibility.md)。fwcd 1.3.13 在真实 AGP `:common/cleanx100Debug` 模型上可以完成 Kotlin 到 Java 定义跳转和 Kotlin 标准库悬停，但其诊断通知不带文档版本，也未提供 pull diagnostics；把通知时间当作当前版本会造成过期诊断。该发行版在同一工作区打开 Java 文档还会进入脚本编译路径并失败，因此暂不注册 Kotlin 产品 profile，保留为开发探针。
+
 ## 2. 声明与版本契约
 
 计划覆盖的文件类别为 `.java`、`.kt`、普通 `.kts`、`.groovy`、`.gradle` 与 `.gradle.kts`。复合后缀优先，脚本单独验收；不得仅扩大扩展名列表就标记可用。每份文档只有一个主语言提供者，不能重复接收相互覆盖的诊断或编辑。

@@ -8,8 +8,10 @@ import java.util.List;
 import java.util.Map;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
+import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.compiler.IProblem;
 import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.ls.core.internal.IDelegateCommandHandler;
 import org.eclipse.jdt.ls.core.internal.JDTUtils;
@@ -37,13 +39,15 @@ public final class WorkingCopyDiagnostics implements IDelegateCommandHandler {
         if (text.length() > 2 * 1024 * 1024 || !digest(text).equals(expected)) {
             throw new IllegalStateException("document-content-modified");
         }
-        CompilationUnit ast = unit.reconcile(AST.getJLSLatest(), ICompilationUnit.FORCE_PROBLEM_DETECTION, null, monitor);
+        boolean syntaxOnly = Boolean.TRUE.equals(request.get("syntaxOnly"));
+        CompilationUnit ast = syntaxOnly
+            ? parseCurrentSyntax(unit, text, monitor)
+            : unit.reconcile(AST.getJLSLatest(), ICompilationUnit.FORCE_PROBLEM_DETECTION, null, monitor);
         if (ast == null) throw new IllegalStateException("document-not-a-working-copy");
         if (monitor.isCanceled() || !digest(unit.getBuffer().getContents()).equals(expected)) {
             throw new IllegalStateException("document-content-modified");
         }
         List<Map<String, Object>> diagnostics = new ArrayList<>();
-        boolean syntaxOnly = Boolean.TRUE.equals(request.get("syntaxOnly"));
         PositionIndex positions=new PositionIndex(text);
         for (IProblem problem : ast.getProblems()) {
             // Syntax-only diagnostics must never expose semantic/type results from
@@ -60,6 +64,19 @@ public final class WorkingCopyDiagnostics implements IDelegateCommandHandler {
                 "message", message, "source", "jdt", "code", Integer.toString(problem.getID())));
         }
         return Map.of("version", version.longValue(), "digest", expected, "items", diagnostics);
+    }
+
+    /** Parse the captured overlay directly so syntax diagnostics never use stale model state. */
+    private static CompilationUnit parseCurrentSyntax(ICompilationUnit unit, String text, IProgressMonitor monitor) {
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(text.toCharArray());
+        parser.setKind(ASTParser.K_COMPILATION_UNIT);
+        parser.setResolveBindings(false);
+        parser.setBindingsRecovery(false);
+        parser.setStatementsRecovery(true);
+        IJavaProject project = unit.getJavaProject();
+        if (project != null) parser.setCompilerOptions(project.getOptions(true));
+        return (CompilationUnit) parser.createAST(monitor);
     }
 
     private static String digest(String text) throws Exception {

@@ -64,7 +64,9 @@ try {
   await peer.request("initialize", {rootUri: pathToFileURL(model.buildRoot).href, initializationOptions: {analysis: {...options, stateDirectory: state}}});
   peer.notify("initialized", {});
   for (const doc of docs.values()) peer.notify("textDocument/didOpen", {textDocument: {uri: doc.uri, text: doc.text, version: doc.version, languageId: doc.languageId}});
-  const deadline = Date.now() + 300000;
+  // Real multi-module imports are measured under the user's normal machine load. Individual
+  // compiler jobs remain bounded; this acceptance budget must not be a hidden product SLA.
+  const deadline = Date.now() + 600000;
   while (!ready) {if (Date.now() > deadline) throw Error("project-indexing-timeout"); await pause(100);}
   summary.readyMs = Date.now() - began;
   for (const probe of probes) {

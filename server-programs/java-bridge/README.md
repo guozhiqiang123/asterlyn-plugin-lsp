@@ -8,8 +8,8 @@ with the pinned JDK/JDT paths; no JDT or JDK classes are copied into this JAR.
 node scripts/build-java-bridge.mjs <jdk-25-home> <jdtls-root> server-programs/java-bridge.jar
 ```
 
-The current reproducible artifact is 7,859 bytes with SHA-256
-`caa39507e93acf7b5c2567a6bf137e20a2ff6fcc9ddbe2771daed17cdddf4d6c`.
+The current reproducible artifact is 8,274 bytes with SHA-256
+`efbc2e3cd3bc835a08e17f6ce5410b9d46374e1ab220b303d5d87932781c67d0`.
 An independent second build produced byte-identical output.
 
 `asterlyn.java.documentDiagnostics` accepts the existing `{uri, version,
@@ -17,15 +17,16 @@ digest}` request and an optional boolean `syntaxOnly` field. The response remain
 `{version, digest, items}`. When `syntaxOnly` is true, only JDT problems whose
 ID has the public `IProblem.Syntax` category bit are returned; semantic/type
 problems are deliberately omitted while an external ABI is being rebuilt. The
-working-copy digest and post-reconcile digest checks remain mandatory in both
-modes.
+working-copy digest and post-parse/reconcile digest checks remain mandatory in
+both modes.
 
-The real regression should open a Java working copy containing one parser error
-and one unresolved/type error, issue the command twice with the same version and
-digest, and assert that `syntaxOnly:true` contains only the parser diagnostic
-while `syntaxOnly:false` contains the type diagnostic as well. The request must
-then be repeated after changing the buffer and version to verify the existing
-stale-content rejection.
+The real regression first opens a valid Java working copy and obtains a baseline
+diagnostic result, then applies a full-text `didChange` whose parser error is on
+a later line and whose text also contains a type mismatch. It asserts that
+`syntaxOnly:true` reports the parser error on that later line while
+`syntaxOnly:false` additionally reports the type mismatch. This exercises the
+current overlay rather than a stale reconciled AST. The request is then repeated
+with a wrong digest to verify the existing stale-content rejection.
 
 The direct JDT regression is runnable without the Kotlin backend:
 

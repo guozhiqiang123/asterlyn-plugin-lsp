@@ -182,3 +182,19 @@ whole regression 86.478 s, peak RSS 1,305,344 KiB, shutdown 890 ms. The earlier 
 Typecheck, six ordinary tests, archive inspection and native helper/desktop contribution routing pass.
 Initial KAPT preparation still precedes JDT startup and can take minutes in large workspaces; the
 responsive syntax path applies to later edits after backend readiness.
+
+## Current-text Java syntax correction (0.3.5)
+
+The stronger real-project test first pulls baseline diagnostics, then requires newly injected
+unsaved errors to cover their inserted line. This exposed stale incremental `reconcile` parser
+positions after semantic requests: a new error on line 21 was reported against the original class
+on line 5. Syntax-only mode now creates a new JDT ASTParser over the captured working-copy text,
+using the owning project's compiler options and no binding resolution. Full semantic diagnostics
+retain the existing reconcile path. Digest/version/cancellation checks remain in force.
+
+The independently rebuilt bridge is 8,274 bytes, SHA-256
+`efbc2e3cd3bc835a08e17f6ce5410b9d46374e1ab220b303d5d87932781c67d0`.
+Direct JDT baseline→edit/category/version/digest regression passes. The real common-module adapter
+case has zero baseline diagnostics and reports all five new syntax errors on line 21 in 13 ms;
+its Java definition/hover/completion also passes, business source hashes unchanged. Full 25-module
+and final installed-package evidence follows in the host recovery record.

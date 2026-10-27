@@ -34,22 +34,38 @@ try {
   const sourceRoot = module.sources.find(item => item.endsWith("/java"));
   if (!sourceRoot) throw Error("fixture-has-no-java-source");
   const uri = pathToFileURL(join(sourceRoot, "com/example/fixture/JavaUse.java")).href;
-  const text = "package com.example.fixture;\nclass SyntaxProbe { String wrong = 1; void invalid( }\n";
-  const digest = `sha256:${createHash("sha256").update(text).digest("hex")}`;
-  peer.notify("textDocument/didOpen", {textDocument: {uri, languageId: "java", version: 7, text}});
+  const baseline = "package com.example.fixture;\nclass SyntaxProbe { String value = \"ok\"; }\n";
+  const digestOf = text => `sha256:${createHash("sha256").update(text).digest("hex")}`;
+  peer.notify("textDocument/didOpen", {textDocument: {uri, languageId: "java", version: 7, text: baseline}});
   await new Promise(resolve => setTimeout(resolve, 1000));
-  const call = syntaxOnly => peer.request("workspace/executeCommand", {command: "asterlyn.java.documentDiagnostics", arguments: [{uri, version: 7, digest, syntaxOnly}]}, 30000);
-  const syntax = await call(true), full = await call(false);
-  assert.equal(syntax.version, 7); assert.equal(syntax.digest, digest);
-  assert.equal(full.version, 7); assert.equal(full.digest, digest);
+  const call = (text, version, syntaxOnly) => peer.request("workspace/executeCommand", {command: "asterlyn.java.documentDiagnostics", arguments: [{uri, version, digest: digestOf(text), syntaxOnly}]}, 30000);
+  const baselineResult = await call(baseline, 7, true);
+  assert.equal(baselineResult.version, 7); assert.equal(baselineResult.digest, digestOf(baseline));
+  assert.equal(baselineResult.items.length, 0, "valid baseline unexpectedly reported syntax errors");
+  const text = [
+    "package com.example.fixture;", "class SyntaxProbe {", "  String value = \"ok\";", "  int first = 1;",
+    "  int second = first + 1;", "  String third = value;", "  int fourth = 4;", "  int fifth = 5;",
+    "  int sixth = 6;", "  int seventh = 7;", "  int eighth = 8;", "  int ninth = 9;",
+    "  int tenth = 10;", "  int eleventh = 11;", "  int twelfth = 12;", "  int thirteenth = 13;",
+    "  int fourteenth = 14;", "  int fifteenth = 15;", "  int sixteenth = 16;", "  int seventeenth = 17;",
+    "  String wrong = 1; void invalid( }", "}", "",
+  ].join("\n");
+  const version = 8;
+  peer.notify("textDocument/didChange", {textDocument: {uri, version}, contentChanges: [{text}]});
+  await new Promise(resolve => setTimeout(resolve, 500));
+  const syntax = await call(text, version, true), full = await call(text, version, false);
+  const digest = digestOf(text);
+  assert.equal(syntax.version, version); assert.equal(syntax.digest, digest);
+  assert.equal(full.version, version); assert.equal(full.digest, digest);
   const syntaxCodes = syntax.items.map(item => Number(item.code));
   const fullCodes = full.items.map(item => Number(item.code));
   assert.ok(syntaxCodes.length > 0, "syntaxOnly returned no parser diagnostic");
+  assert.ok(syntax.items.some(item => item.range.start.line >= 20), `syntax diagnostic did not follow changed line: ${JSON.stringify(syntax.items)}`);
   assert.ok(fullCodes.includes(16777233), `full diagnostics missing TypeMismatch: ${fullCodes.join(",")}`);
   assert.ok(!syntaxCodes.includes(16777233), "syntaxOnly leaked TypeMismatch");
   assert.ok(fullCodes.length > syntaxCodes.length, "full diagnostics did not add semantic result");
   await assert.rejects(() => peer.request("workspace/executeCommand", {command: "asterlyn.java.documentDiagnostics", arguments: [{uri, version: 7, digest: `sha256:${"0".repeat(64)}`, syntaxOnly: true}]}, 30000), "wrong digest was accepted");
-  console.log(JSON.stringify({status: "passed", syntaxCodes, fullCodes, version: 7, digest}));
+  console.log(JSON.stringify({status: "passed", syntaxCodes, fullCodes, version, digest}));
 } finally {
   if (child && !child.killed) child.kill("SIGTERM");
   await new Promise(resolve => setTimeout(resolve, 500));

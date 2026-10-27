@@ -31,7 +31,7 @@ export const LSP_PLUGIN_MANIFEST: SdkInstallablePluginPackageManifest = Object.f
   schemaVersion: 3,
   sdkMajor: 1,
   id: LSP_PLUGIN_ID,
-  version: "0.3.4",
+  version: "0.3.5",
   nameKey: "name",
   descriptionKey: "description",
   localization: Object.freeze({

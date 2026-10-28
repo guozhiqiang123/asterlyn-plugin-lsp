@@ -265,3 +265,34 @@ passed the exact native package health checkpoints and has replaced the canonica
 local installation. Both stored-icon launches record frontend readiness. Final
 interactive navigation acceptance is pending macOS unlock; the lock-screen run
 of the rendered smoke gate reports WINDOW_MISSING and is not claimed as a pass.
+
+### Final installed native acceptance — 2026-10-28
+
+The unchanged final 0.3.6 archive is now accepted with Android Gradle 0.6.1 on
+the installed host 0.1.22 revision `ccca8c7989c768234cf04c99774022dffbee286a`.
+Both providers are enabled, active and known-good, with no pending replacement.
+The canonical root-preserving installation, strict/deep bundle verification,
+rendered shell smoke (30-second observation budget), first icon launch and icon
+reopen pass. No remote publication is performed.
+
+Native session `session-1793157545192-34639-0` imports all 25 boostCleaner
+modules in 19,500 ms and reaches workspace.ready 313,143 ms after language
+session start. Actual Ctrl+left-click navigates from Kotlin AdsRuntimeState.kt
+to the three-argument SharedPref.getLong Java declaration (events 128/129),
+and from AppUtils.java:297 to GlobalConfigNew.kt (events 132/133). Saved
+destination tabs corroborate both native lookup results; F12 also opens the
+first target. During indexing the host correctly shows informational indexing
+feedback. Business source hashes are unchanged and its worktree remains clean.
+
+The final session through event 136 has no unexpected plugin exit, quarantine,
+protocol-limit, timeout or resource-limit event. The host follow-up also records
+original helper exit status before EOF cleanup; an earlier separate-window helper
+EOF has no proven root cause and is not claimed fixed by that observability
+change. Large-project cold preparation still takes minutes. The optional final
+native standard-library preview check was interrupted by a later screen lock;
+the exact-package protocol preview checks above remain the accepted evidence.
+
+The complete installation/gesture/log receipts and limitations are recorded in
+the host's `docs/engineering/2026-10-27-boostcleaner-lsp-recovery.md`, under its
+“Final installed native acceptance” section. Local machine evidence is retained
+in `/tmp/asterlyn-android-lsp/boost-native-20261028/`.

@@ -296,3 +296,34 @@ The complete installation/gesture/log receipts and limitations are recorded in
 the host's `docs/engineering/2026-10-27-boostcleaner-lsp-recovery.md`, under its
 “Final installed native acceptance” section. Local machine evidence is retained
 in `/tmp/asterlyn-android-lsp/boost-native-20261028/`.
+
+## Kotlin class-reference source ownership — 2026-10-29 plan
+
+The next user report concerns the `SplashActivity` declaration in boostCleaner.
+The installed host already requests semantic references after its empty definition
+result, but native queries fail in the adapter. A direct probe of the identical
+0.3.6 Kotlin adapter/component returns 33 reference locations: 32 map to admitted
+workspace sources and one is the compiler's non-existent `file:///dummy.kt`.
+The Android adapter's canonicalization attempts to resolve that transient PSI
+location and rejects the complete batch. This is not missing modifier input or
+proof that the class has no references. The generic indexing error currently
+obscures the real failure; it must not be relabelled as successful indexing.
+
+1. At the Kotlin source-view boundary, admit references only when their source
+   URI maps back to an imported workspace file. Omit compiler scratch PSI and
+   other unmapped references, without guessing a path, searching symbol names,
+   trusting file existence or adding Kotlin logic to the host. Definitions retain
+   their separate dependency-source admission. Malformed responses remain errors.
+2. Cover mixed owned/scratch locations, all-scratch/null results, malformed values,
+   URI normalization and unchanged definition mapping. Re-run the exact real-class
+   definition/references probe; retain expected targets and business-source hashes.
+3. Produce plugin 0.3.7, verify/package/inspect it, update the host's exact bundled
+   pin, run required checks and canonically replace the signed local application.
+   Native Command-click must present the class's multiple valid references and
+   open the selected source; ordinary class-use-to-definition navigation must also
+   work. Record latency, memory, accessible picker state and limits. No remote
+   publication or business-source edits are authorized by this fix.
+
+Evidence begins in `/tmp/asterlyn-android-lsp/boost-class-nav-20261029/`.
+The earlier method-only acceptance remains bounded to its recorded positions;
+it did not establish class-reference compatibility or complete mixed-language usages.

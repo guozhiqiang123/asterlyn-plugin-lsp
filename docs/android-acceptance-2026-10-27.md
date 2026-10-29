@@ -353,3 +353,25 @@ Native inspection admits content digest
 No new third-party dependency, compiler component or license is introduced.
 Final host package health, canonical installation and native class-picker
 acceptance remain pending; the direct probe alone does not close that gate.
+
+### Exact-package native acceptance completed
+
+The same checksum-covered 0.3.7 archive is now installed with host `2b5192f`
+and Android 0.6.2, both active and known-good. Package health, strict whole-bundle
+signature, rendered-shell smoke, canonical replacement and both stored-icon
+launches pass. In session `session-1793254785418-9501-0`, actual Command+left-click
+on `SplashActivity.kt:60` presents 32 reference choices (native events 95/96/98).
+The labelled accessible picker filters by `ProcessStateMonitor`; Return opens its
+line 37 (99/100). Command-click on that class use returns to `SplashActivity.kt:60`
+(104/105/106). Saved target tabs and highlighted lines confirm both destinations.
+Business-source hashes are unchanged and the worktree remains clean.
+
+No post-readiness backend failure, helper termination or quarantine occurs through
+event 106. Cold model/language preparation takes 304,727 ms; 65 samples peak at
+1,805,456 KiB aggregate descendant RSS and 33,168 KiB combined isolated-helper
+RSS. These are local shared-page-inclusive samples, not leak or soak guarantees.
+The native reference request records 2,656 ms. Existing generated-binding
+diagnostics and incomplete cross-language usage coverage remain separate limits.
+The host's owning recovery document records exact executable/archive/install
+identities and local `boost-class-nav-20261029` receipts. No remote publication
+or project dependency/TLS/source changes are made.

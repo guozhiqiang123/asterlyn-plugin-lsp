@@ -22,6 +22,29 @@ const uriPath = (value) => {
 const uriFor = (value) => pathToFileURL(value).href;
 const shellQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 
+/** References are usages in imported sources, never compiler scratch PSI or dependency previews. */
+export function ownedKotlinReferences(value, privateToOriginal) {
+  if (value === null) return null;
+  if (!Array.isArray(value)) throw Error("kotlin-reference-result-invalid");
+  const point = p => p && Number.isSafeInteger(p.line) && Number.isSafeInteger(p.character)
+    && p.line >= 0 && p.character >= 0 && p.line <= 0xffff_ffff && p.character <= 0xffff_ffff;
+  return value.filter(location => {
+    const start = location?.range?.start, end = location?.range?.end;
+    if (typeof location?.uri !== "string" || location.uri.length > 16384
+      || location.uri.trim() !== location.uri || /[\u0000-\u001f\u007f]/u.test(location.uri)
+      || !point(start) || !point(end) || end.line < start.line
+      || (end.line === start.line && end.character < start.character)) throw Error("kotlin-reference-result-invalid");
+    let url;
+    try {url = new URL(location.uri);} catch {throw Error("kotlin-reference-result-invalid");}
+    if (url.protocol !== "file:") return false;
+    const path = uriPath(location.uri);
+    if (!path || url.search || url.hash) throw Error("kotlin-reference-result-invalid");
+    // The compiler can include references from transient files such as dummy.kt.
+    // File existence/name is not authority: only our captured source map admits a usage.
+    return privateToOriginal.has(path) || privateToOriginal.has(path.toLowerCase());
+  });
+}
+
 async function copySources(sourceRoot, destination, mappings, counter) {
   const info = await lstat(sourceRoot);
   if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("kotlin-source-root-invalid");
@@ -169,7 +192,8 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     return params;
   };
   const peer = {
-    request: (method, params, timeout) => upstream.request(method, map.input(params), timeout).then(map.output),
+    request: (method, params, timeout) => upstream.request(method, map.input(params), timeout)
+      .then(result => map.output(method === "textDocument/references" ? ownedKotlinReferences(result, mappings.privateToOriginal) : result)),
     notify: (method, params) => upstream.notify(method, map.input(params)),
     reply: (id, result) => upstream.reply(id, map.input(result)),
     reject: (...args) => upstream.reject(...args),

@@ -327,3 +327,29 @@ obscures the real failure; it must not be relabelled as successful indexing.
 Evidence begins in `/tmp/asterlyn-android-lsp/boost-class-nav-20261029/`.
 The earlier method-only acceptance remains bounded to its recorded positions;
 it did not establish class-reference compatibility or complete mixed-language usages.
+
+### Implementation and package checks
+
+The 0.3.7 Kotlin adapter filters reference locations against the existing private
+source-to-original map before translating their URIs. It does not special-case
+`dummy.kt`, trust an existing outside file or change definition/dependency-preview
+mapping. Null remains a valid empty result; malformed batches/ranges remain errors.
+Four focused ownership tests cover mixed, scratch-only, malformed, external-file
+and URI-normalization cases. All 12 plugin tests and typecheck pass.
+
+The repeated real-project probe preserves all 32 original workspace locations
+byte for byte while omitting the compiler scratch location. Reference lookup takes
+1,129 ms locally; a type use in `ProcessStateMonitor.kt:37` resolves back to
+`SplashActivity.kt:60` in 4 ms. Base-class definition mapping remains unchanged.
+Locations include imports and receiver uses returned by the semantic server;
+this correction does not add Java usages to Kotlin's upstream reference search.
+The generic adapter error classification is still a known feedback limitation
+for other failures; removing this invalid reference prevents this specific error.
+
+Two deterministic release builds match: 4,649,739 bytes (+481), SHA-256
+`ec3e7899064ca67055dcc71370850026cf46110ca919b29d55fda199963db129`.
+Native inspection admits content digest
+`sha256:63baf0c482e1362d37bc4f27e09a36fadfba16d7942505f93ef8cacf3469da1b`.
+No new third-party dependency, compiler component or license is introduced.
+Final host package health, canonical installation and native class-picker
+acceptance remain pending; the direct probe alone does not close that gate.

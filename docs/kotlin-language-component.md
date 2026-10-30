@@ -89,3 +89,9 @@ unchanged; the committed dependency lock now binds the new patch digest.
 Build archive SHA-256: `b116ba91ee10f3e3be08781e4f08fe3c3ae5432ced42a80fb03b5cacf29e7634`.
 Admitted inventory digest: `46ea863b9182505825b3ddfd343b12693a77a3a996fd7b740cd560ae6e6a798c`.
 This remains an explicitly installed component; activation does not download tools.
+
+## 1.3.13-asterlyn.2.3.21.4：索引语义准备
+
+沿用相同上游提交、JDK 和 39 个固定运行依赖，无新增依赖。添加仅供适配器使用的 `kotlin/asterlynPrepare`，在索引阶段一次准备选中模块依赖闭包的绑定；引用查询复用现有绑定。SourcePath 聚合 BindingContext 时按身份去重，避免对共享同一批编译上下文的文件重复合并。KAPT 编译器元数据提供类身份和声明起点，适配器只在完全相同源码快照中映射类名范围，别名、复杂语法或元数据缺失回退原语义服务。
+
+归档 SHA-256 `5ca0323ccef08625a87dba1155482617c7c5018e52975ef2ec8074e1d48e9f0d`；内容摘要 `sha256:24f6668de90579dff300f7e0c2df4623a73f3ce5a5d2322704fb8b8ba140ed97`；归档 90,238,214 字节，展开 101,128,857 字节、115 文件。新增准备请求沿用原 JVM 堆上限 2 GiB 和两个实例上限，不持久化 PSI/绑定。真实 boostCleaner 首轮语义准备样本 18.9 秒，此工作移到 ready 之前，不能称为免费提速。

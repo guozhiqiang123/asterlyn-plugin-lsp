@@ -5,10 +5,12 @@ import {fileURLToPath, pathToFileURL} from "node:url";
 import {createHash} from "node:crypto";
 import {RpcPeer} from "./rpc.mjs";
 import {createJavaModel, prepareJdt} from "./java-model.mjs";
+import {navigationResolutionCache} from "./navigation-resolution-cache.mjs";
 import {prepareAndroidKotlin} from "./android-kotlin.mjs";
 
 const host = new RpcPeer(process.stdin, process.stdout);
-const documents = new Map(), referenceControllers=new Map();
+const documents = new Map(), referenceControllers=new Map(), definitionHandoff=navigationResolutionCache();
+const resolutionKey=(params,version,current)=>JSON.stringify([modelGeneration,current,params.textDocument.uri,version,params.position.line,params.position.character]);
 let options, backend, child, languageContext, stateDirectory, modelGeneration = null;
 let workspaceRoot, sourceDirectories = [], backendReady = false;
 let loading = null, poll, closed = false, indexing = true, epoch = 0, revision = 0, active = 0;
@@ -52,7 +54,10 @@ function queueOverlay(uri, doc, closing = false) {
   overlayQueue = overlayQueue.catch(() => {}).then(async () => {
     if (!context || context !== languageContext) return;
     if (closing) await context.closeOverlay(uri);
-    else {await context.applyOverlay(uri, captured); if(context === languageContext)await context.startIfNeeded();}
+    else {await context.applyOverlay(uri, captured); if(context === languageContext&&captured.languageId==="kotlin"){
+      void context.startIfNeeded(uri).catch(error=>{if(!closed&&context===languageContext)trace(errorCode(error),{backend:"kotlin"});});
+      if(captured.languageId==="kotlin")void context.primeNavigation(uri,backend).catch(error=>trace(errorCode(error),{backend:"java"}));
+    }}
   }).finally(() => {overlayPending--;}).catch(error => {if (!closed && context === languageContext) status(!indexing,"warning",errorCode(error));});
   return overlayQueue;
 }
@@ -98,6 +103,7 @@ async function canonical(value, budget = {bytes: 0}, documentUri) {
 }
 async function stopBackend() {
   for(const controller of referenceControllers.values())controller.abort();
+  definitionHandoff.clear();
   const previous = child, context = languageContext, directory = stateDirectory;
   backendReady = false; backend?.close(); backend = null; child = null; languageContext = null; stateDirectory = null;
   await context?.close();
@@ -168,6 +174,7 @@ async function load(refresh = false) {
     stage({phase:"backend"});status(true,"warning","java-analysis-awaiting-kotlin");
     let kotlinFailure=false;
     await languageContext?.warmProject().catch(error=>{kotlinFailure=true;trace(errorCode(error),{backend:"kotlin"});});
+    if(languageContext)await Promise.all([...documents].filter(([,doc])=>doc.languageId==="kotlin").slice(0,8).map(([file])=>languageContext.primeNavigation(file,peer).catch(error=>trace(errorCode(error),{backend:"java"}))));
     progress={phase:kotlinFailure||partialJava?"failed":"ready"};failureCount=0;retryAt=0;
     status(true,kotlinFailure||partialJava?"warning":"ok",kotlinFailure?"kotlin-backend-unavailable":partialJava?"java-analysis-awaiting-kotlin":undefined);refreshDiagnostics();
   })().catch(error => {if (!closed) failure(error);}).finally(() => {loading = null;});
@@ -191,10 +198,17 @@ async function diagnostics(uri, doc, version) {
     catch {if (attempt === 39) throw Error("working-copy-not-current"); await pause(50);}
   }
 }
-async function references(params,doc,signal) {
+async function references(params,doc,controller,key) {
+  const signal=controller.signal,started=performance.now();
+  const timed=async(code,task)=>{const began=performance.now();try{return await task();}finally{trace(code,{durationMs:Math.round(performance.now()-began)});}};
   if(languageContext?.javaAbiCurrent()===false){void languageContext.awaitJavaAbi().catch(()=>{});throw Error("android-indexing");}
-  const definitions=doc.languageId==="kotlin"?await languageContext.request("textDocument/definition",params,25000,signal):await backend.request("textDocument/definition",params,25000,signal);
-  const mapped=await canonical(definitions,{bytes:0},params.textDocument.uri);
+  const declaration=doc.languageId==="kotlin"?languageContext?.classDeclaration(params.textDocument.uri,params.position,doc.text):null;
+  const previous=declaration?{value:[declaration]}:definitionHandoff.take(key);
+  if(previous)trace(declaration?"android-compiler-class-definition":"android-definition-reused");
+  const mapped=previous?previous.value:await timed("android-reference-definition-completed",async()=>{
+    const definitions=doc.languageId==="kotlin"?await languageContext.request("textDocument/definition",params,25000,signal):await backend.request("textDocument/definition",params,25000,signal);
+    return canonical(definitions,{bytes:0},params.textDocument.uri);
+  });
   const targets=(Array.isArray(mapped)?mapped:mapped?[mapped]:[]).filter(item=>item?.uri?.startsWith("file:")&&languageContext?.moduleFor(item.uri));
   if(!targets.length)targets.push({uri:params.textDocument.uri,range:{start:params.position,end:params.position}});
   const unique=new Map();
@@ -206,14 +220,25 @@ async function references(params,doc,signal) {
     const key=`${uri}:${p.line}:${p.character}`,old=unique.get(key);if(!old||e.line<old.range.end.line||(e.line===old.range.end.line&&e.character<old.range.end.character))unique.set(key,{...item,uri});if(unique.size>4096)throw Error("android-reference-result-bound");
   }};
   for(const target of targets.slice(0,32)) {
-    if(/\.kt(?:s)?$/u.test(new URL(target.uri).pathname)) {
-      const anchors=await languageContext.javaDeclarations(target,backend,signal);trace("android-java-reference-anchors",{count:anchors.length});
-      for(const anchor of anchors)await add(await backend.request("textDocument/references",{...params,textDocument:{uri:anchor.uri},position:anchor.range.start},25000,signal));
-    }else await add(await backend.request("textDocument/references",{...params,textDocument:{uri:target.uri},position:target.range.start},25000,signal));
-    await add(await languageContext.references(target,signal));
+    // These are independent semantic engines. Keep their private workspaces and result sets
+    // separate until both succeed; abort and drain the peer branch on failure.
+    let firstFailure=null;
+    const tasks=[
+      ()=>timed("android-java-references-completed",async()=>{
+        const anchors=/\.kt(?:s)?$/u.test(new URL(target.uri).pathname)?await languageContext.javaDeclarations(target,backend,signal):[target];
+        trace("android-java-reference-anchors",{count:anchors.length});
+        const result=[];
+        for(const anchor of anchors)result.push(...await backend.request("textDocument/references",{...params,textDocument:{uri:anchor.uri},position:anchor.range.start},25000,signal)??[]);
+        return result;
+      }),
+      ()=>timed("android-kotlin-references-completed",()=>languageContext.references(target,signal))
+    ];
+    const results=await Promise.allSettled(tasks.map(async task=>{try{return await task();}catch(error){firstFailure??={error};controller.abort();throw error;}}));
+    if(firstFailure)throw firstFailure.error;
+    for(const result of results)await add(result.value);
     if(params.context?.includeDeclaration)await add([target]);
   }
-  trace("android-references-completed",{count:unique.size});
+  trace("android-references-completed",{count:unique.size,durationMs:Math.round(performance.now()-started)});
   return [...unique.values()].sort((a,b)=>a.uri.localeCompare(b.uri)||a.range.start.line-b.range.start.line||a.range.start.character-b.range.start.character);
 }
 
@@ -229,20 +254,18 @@ host.on("request", async request => {
     // before capturing the request's analysis revision, rather than observing a half-applied batch.
     let queued; do {queued = overlayQueue; await queued;} while (queued !== overlayQueue);
     if (!backend || indexing) throw Error(lastFailure??"android-indexing");
-    const params = request.params, doc = document(params?.textDocument?.uri), version = doc.version, current = revision;
-    if(doc.languageId==="kotlin"&&!languageContext?.readyFor(params.textDocument.uri)){
-      await languageContext?.startIfNeeded(params.textDocument.uri);
-    }
+    const params = request.params, doc = document(params?.textDocument?.uri), version = doc.version, current = revision, key=params.position?resolutionKey(params,version,current):null;
     let result;
     if (request.method === "textDocument/diagnostic") result = await diagnostics(params.textDocument.uri, doc, version);
     else {
       if (!["textDocument/definition", "textDocument/references", "textDocument/hover", "textDocument/completion"].includes(request.method)) throw Error("unsupported-method");
-      if(request.method==="textDocument/references")result=await references(params,doc,controller.signal);
-      else if (doc.languageId === "kotlin") result = await languageContext.request(request.method, params);
+      if(request.method==="textDocument/references")result=await references(params,doc,controller,key);
+      else if (doc.languageId === "kotlin") result = (request.method==="textDocument/definition"&&languageContext.classDeclaration(params.textDocument.uri,params.position,doc.text))||await languageContext.request(request.method, params);
       else {if (languageContext?.javaAbiCurrent(params.textDocument.uri) === false) {void languageContext.awaitJavaAbi().catch(() => {}); throw Error("android-indexing");} result = await backend.request(request.method, params);}
       if (["textDocument/definition", "textDocument/references"].includes(request.method)) result = await canonical(result, {bytes: 0}, params.textDocument.uri);
     }
     if (doc.version !== version || current !== revision) throw Error("stale-result");
+    if(request.method==="textDocument/definition")definitionHandoff.put(key,result);
     host.reply(request.id, result);
   } catch(error) {const code=errorCode(error);trace(code);if(error?.code===-32800){host.reject(request.id,-32800,"Language lookup was cancelled.");return;}const transient=error?.code===-32801||["android-indexing","stale-result","stale-diagnostics","kotlin-session-busy","working-copy-not-current"].includes(code);host.reject(request.id, transient?-32801:-32603, transient?"Language analysis is indexing or its source context has changed.":code);}
   finally {if(deadline)clearTimeout(deadline);referenceControllers.delete(request.id);active--;}

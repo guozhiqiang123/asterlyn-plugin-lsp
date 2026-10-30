@@ -2,7 +2,7 @@
   "schemaVersion": 3,
   "sdkMajor": 1,
   "id": "dev.asterlyn.lsp",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "nameKey": "name",
   "descriptionKey": "description",
   "localization": {
@@ -78,9 +78,9 @@
           },
           {
             "id": "kotlin-language-server-asterlyn",
-            "version": "1.3.13-asterlyn.2.3.21.3",
-            "archiveDigest": "sha256:b116ba91ee10f3e3be08781e4f08fe3c3ae5432ced42a80fb03b5cacf29e7634",
-            "contentDigest": "sha256:46ea863b9182505825b3ddfd343b12693a77a3a996fd7b740cd560ae6e6a798c"
+            "version": "1.3.13-asterlyn.2.3.21.4",
+            "archiveDigest": "sha256:5ca0323ccef08625a87dba1155482617c7c5018e52975ef2ec8074e1d48e9f0d",
+            "contentDigest": "sha256:24f6668de90579dff300f7e0c2df4623a73f3ce5a5d2322704fb8b8ba140ed97"
           },
           {
             "id": "kotlin-compiler-bridge",

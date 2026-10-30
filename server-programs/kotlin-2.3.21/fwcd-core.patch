@@ -164,185 +164,6 @@ index 2ec1e52..dc7c2f6 100644
      }
  
      private fun shutdownExecutors(awaitTermination: Boolean) {
-diff --git a/server/src/main/kotlin/org/javacs/kt/SourcePath.kt b/server/src/main/kotlin/org/javacs/kt/SourcePath.kt
-index dff7e0d..2695656 100644
---- a/server/src/main/kotlin/org/javacs/kt/SourcePath.kt
-+++ b/server/src/main/kotlin/org/javacs/kt/SourcePath.kt
-@@ -19,6 +19,10 @@ import java.nio.file.Path
- import java.nio.file.Paths
- import java.net.URI
- import java.util.concurrent.locks.ReentrantLock
-+import java.util.concurrent.atomic.AtomicLong
-+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
-+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
-+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
- 
- class SourcePath(
-     private val cp: CompilerClassPath,
-@@ -27,6 +31,13 @@ class SourcePath(
-     private val databaseService: DatabaseService
- ) {
-     private val files = mutableMapOf<URI, SourceFile>()
-+    private val epoch = AtomicLong()
-+    private val contentEpoch: Long get() = epoch.get()
-+    private fun requireEpoch(expected: Long) {
-+        if (contentEpoch != expected) throw ResponseErrorException(
-+            ResponseError(ResponseErrorCode.ContentModified, "Semantic source context changed", null)
-+        )
-+    }
-     private val parseDataWriteLock = ReentrantLock()
- 
-     private val indexAsync = AsyncExecutor()
-@@ -47,6 +58,7 @@ class SourcePath(
-         val path: Path? = uri.filePath,
-         var parsed: KtFile? = null,
-         var compiledFile: KtFile? = null,
-+        var compiledEpoch: Long = -1,
-         var compiledContext: BindingContext? = null,
-         var module: ModuleDescriptor? = null,
-         val language: Language? = null,
-@@ -66,6 +78,7 @@ class SourcePath(
-         fun clean() {
-             parsed = null
-             compiledFile = null
-+            compiledEpoch = -1
-             compiledContext = null
-             module = null
-         }
-@@ -84,7 +97,7 @@ class SourcePath(
-         fun compileIfNull() = parseIfChanged().apply { doCompileIfNull() }
- 
-         private fun doCompileIfNull() {
--            if (compiledFile == null) {
-+            if (compiledFile == null || compiledEpoch != contentEpoch) {
-                 doCompileIfChanged()
-             }
-         }
-@@ -95,21 +108,24 @@ class SourcePath(
- 
-         private fun doCompile() {
-             LOG.debug("Compiling {}", path?.fileName)
-+            val compileEpoch = contentEpoch
- 
-             val oldFile = clone()
--
--            val (context, module) = cp.compiler.compileKtFile(parsed!!, allIncludingThis(), kind)
-+            val input = parsed!!
-+            val (context, module) = cp.compiler.compileKtFile(input, allIncludingThis(), kind)
-             parseDataWriteLock.withLock {
-+                requireEpoch(compileEpoch)
-                 compiledContext = context
-                 this.module = module
--                compiledFile = parsed
-+                compiledFile = input
-+                compiledEpoch = compileEpoch
-             }
- 
-             refreshWorkspaceIndexes(listOfNotNull(oldFile), listOfNotNull(this))
-         }
- 
-         private fun doCompileIfChanged() {
--            if (parsed?.text != compiledFile?.text) {
-+            if (parsed?.text != compiledFile?.text || compiledEpoch != contentEpoch) {
-                 doCompile()
-             }
-         }
-@@ -126,7 +142,7 @@ class SourcePath(
-         }
- 
-         // Creates a shallow copy
--        fun clone(): SourceFile = SourceFile(uri, content, path, parsed, compiledFile, compiledContext, module, language, isTemporary)
-+        fun clone(): SourceFile = SourceFile(uri, content, path, parsed, compiledFile, compiledEpoch, compiledContext, module, language, isTemporary)
-     }
- 
-     private fun sourceFile(uri: URI): SourceFile {
-@@ -147,9 +163,15 @@ class SourcePath(
-         }
- 
-         if (uri in files) {
--            sourceFile(uri).put(content)
-+            val file = sourceFile(uri)
-+            if (file.content != content) {
-+                file.put(content)
-+                // Compiled bindings expire lazily; retain all unchanged files' parsed PSI.
-+                epoch.incrementAndGet()
-+            }
-         } else {
-             files[uri] = SourceFile(uri, content, language = language, isTemporary = temporary)
-+            epoch.incrementAndGet()
-         }
-     }
- 
-@@ -168,9 +190,12 @@ class SourcePath(
-             cp.compiler.removeGeneratedCode(listOfNotNull(it.lastSavedFile))
-         }
- 
--        files.remove(uri)
-+        if (files.remove(uri) != null) epoch.incrementAndGet()
-     }
- 
-+    /** Monotonic semantic-source epoch, including dependency-file edits. */
-+    fun semanticEpoch(): Long = contentEpoch
-+
-     /**
-      * Get the latest content of a file
-      */
-@@ -194,9 +219,10 @@ class SourcePath(
-      * Compile changed files
-      */
-     fun compileFiles(all: Collection<URI>): BindingContext {
--        // Figure out what has changed
-+        val requestEpoch = contentEpoch
-+        // Figure out what has changed, including semantic changes in dependencies.
-         val sources = all.map { files[it]!! }
--        val allChanged = sources.filter { it.content != it.compiledFile?.text }
-+        val allChanged = sources.filter { it.content != it.compiledFile?.text || it.compiledEpoch != requestEpoch }
-         val (changedBuildScripts, changedSources) = allChanged.partition { it.kind == CompilationKind.BUILD_SCRIPT }
- 
-         // Compile changed files
-@@ -218,16 +244,19 @@ class SourcePath(
-             // Get all the files. This will parse them if they changed
-             val allFiles = all()
-             beforeCompileCallback.invoke()
-+            requireEpoch(requestEpoch)
-             val (context, module) = cp.compiler.compileKtFiles(parse.values, allFiles, kind)
- 
-             // Update cache
-             for ((f, parsed) in parse) {
-                 parseDataWriteLock.withLock {
-+                    requireEpoch(requestEpoch)
-                     if (f.parsed == parsed) {
-                         //only updated if the parsed file didn't change:
-                         f.compiledFile = parsed
-                         f.compiledContext = context
-                         f.module = module
-+                        f.compiledEpoch = requestEpoch
-                     }
-                 }
-             }
-@@ -247,6 +276,7 @@ class SourcePath(
-         val same = sources - allChanged
-         val combined = listOf(buildScriptsContext, sourcesContext).filterNotNull() + same.map { it.compiledContext!! }
- 
-+        requireEpoch(requestEpoch)
-         return CompositeBindingContext.create(combined)
-     }
- 
-@@ -339,11 +369,10 @@ class SourcePath(
-      * Recompiles all source files that are initialized.
-      */
-     fun refresh() {
--        val initialized = files.values.any { it.parsed != null }
--        if (initialized) {
--            LOG.info("Refreshing source path")
-+        epoch.incrementAndGet()
-+        if (files.values.any { it.parsed != null }) {
-+            LOG.info("Invalidating source path; compilation is deferred until a document is requested")
-             files.values.forEach { it.clean() }
--            files.values.forEach { it.compile() }
-         }
-     }
- 
 diff --git a/server/src/main/kotlin/org/javacs/kt/compiler/Compiler.kt b/server/src/main/kotlin/org/javacs/kt/compiler/Compiler.kt
 index 585ee6d..3fabe10 100644
 --- a/server/src/main/kotlin/org/javacs/kt/compiler/Compiler.kt
@@ -1230,54 +1051,6 @@ index 2a0aac6..b8b43ca 100644
  
  val URI.filePath: Path? get() = runCatching { Paths.get(this) }.getOrNull()
  
-diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
-index 76428a5..df50db5 100644
---- a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
-+++ b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
-@@ -12,7 +12,8 @@ import java.nio.file.Paths
- class KotlinProtocolExtensionService(
-     private val uriContentProvider: URIContentProvider,
-     private val cp: CompilerClassPath,
--    private val sp: SourcePath
-+    private val sp: SourcePath,
-+    private val textDocuments: KotlinTextDocumentService
- ) : KotlinProtocolExtensions {
-     private val async = AsyncExecutor()
- 
-@@ -49,4 +50,17 @@ class KotlinProtocolExtensionService(
- 
-         listOverridableMembers(compiledFile, cursorOffset)
-     }
-+
-+    override fun asterlynDocumentDiagnostics(request: Map<String, Any?>): CompletableFuture<Map<String, Any?>> = async.compute {
-+        val uri = request["uri"] as? String ?: throw IllegalArgumentException("uri is required")
-+        val version = (request["version"] as? Number)?.toInt() ?: throw IllegalArgumentException("version is required")
-+        val digest = request["digest"] as? String ?: throw IllegalArgumentException("digest is required")
-+        textDocuments.documentDiagnostics(uri, version, digest)
-+    }
-+    override fun asterlynReferences(request: Map<String, Any?>): CompletableFuture<List<Location>> = async.compute {
-+        val uri = request["uri"] as? String ?: throw IllegalArgumentException("uri is required")
-+        val line = (request["line"] as? Number)?.toInt() ?: throw IllegalArgumentException("line is required")
-+        val character = (request["character"] as? Number)?.toInt() ?: throw IllegalArgumentException("character is required")
-+        org.javacs.kt.references.findReferencesToLocation(Paths.get(parseURI(uri)), line, character, sp)
-+    }
- }
-diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
-index b29c4b2..6123dda 100644
---- a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
-+++ b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
-@@ -18,4 +18,11 @@ interface KotlinProtocolExtensions {
- 
-     @JsonRequest
-     fun overrideMember(position: TextDocumentPositionParams): CompletableFuture<List<CodeAction>>
-+
-+    /** Version/digest-bound diagnostics pull for the host adapter. */
-+    @JsonRequest
-+    fun asterlynDocumentDiagnostics(request: Map<String, Any?>): CompletableFuture<Map<String, Any?>>
-+    /** Find Kotlin usages of an exact imported Java/Kotlin declaration location. */
-+    @JsonRequest
-+    fun asterlynReferences(request: Map<String, Any?>): CompletableFuture<List<Location>>
- }
 diff --git a/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt b/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt
 index d7bb849..ac5e7bd 100644
 --- a/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt
@@ -1360,3 +1133,250 @@ index ded67d5..2d62901 100644
 +    }
 +    return found.mapNotNull { location(it) }.distinctBy { "${it.uri}:${it.range}" }.sortedWith(compareBy({ it.uri }, { it.range.start.line }, { it.range.start.character }))
 +}
+diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
+index 76428a5..7481167 100644
+--- a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
++++ b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
+@@ -5,6 +5,7 @@ import org.javacs.kt.util.AsyncExecutor
+ import org.javacs.kt.util.parseURI
+ import org.javacs.kt.resolve.resolveMain
+ import org.javacs.kt.position.offset
++import org.javacs.kt.util.toPath
+ import org.javacs.kt.overridemembers.listOverridableMembers
+ import java.util.concurrent.CompletableFuture
+ import java.nio.file.Paths
+@@ -12,7 +13,8 @@ import java.nio.file.Paths
+ class KotlinProtocolExtensionService(
+     private val uriContentProvider: URIContentProvider,
+     private val cp: CompilerClassPath,
+-    private val sp: SourcePath
++    private val sp: SourcePath,
++    private val textDocuments: KotlinTextDocumentService
+ ) : KotlinProtocolExtensions {
+     private val async = AsyncExecutor()
+ 
+@@ -49,4 +51,23 @@ class KotlinProtocolExtensionService(
+ 
+         listOverridableMembers(compiledFile, cursorOffset)
+     }
++
++    override fun asterlynDocumentDiagnostics(request: Map<String, Any?>): CompletableFuture<Map<String, Any?>> = async.compute {
++        val uri = request["uri"] as? String ?: throw IllegalArgumentException("uri is required")
++        val version = (request["version"] as? Number)?.toInt() ?: throw IllegalArgumentException("version is required")
++        val digest = request["digest"] as? String ?: throw IllegalArgumentException("digest is required")
++        textDocuments.documentDiagnostics(uri, version, digest)
++    }
++    override fun asterlynPrepare(): CompletableFuture<Map<String, Any?>> = async.compute {
++        val files = sp.all().map { it.toPath().toUri() }.distinct()
++        require(files.size <= 20000) { "Semantic source preparation bound" }
++        sp.compileFiles(files)
++        mapOf("files" to files.size)
++    }
++    override fun asterlynReferences(request: Map<String, Any?>): CompletableFuture<List<Location>> = async.compute {
++        val uri = request["uri"] as? String ?: throw IllegalArgumentException("uri is required")
++        val line = (request["line"] as? Number)?.toInt() ?: throw IllegalArgumentException("line is required")
++        val character = (request["character"] as? Number)?.toInt() ?: throw IllegalArgumentException("character is required")
++        org.javacs.kt.references.findReferencesToLocation(Paths.get(parseURI(uri)), line, character, sp)
++    }
+ }
+diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
+index b29c4b2..8881e72 100644
+--- a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
++++ b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
+@@ -18,4 +18,14 @@ interface KotlinProtocolExtensions {
+ 
+     @JsonRequest
+     fun overrideMember(position: TextDocumentPositionParams): CompletableFuture<List<CodeAction>>
++
++    /** Version/digest-bound diagnostics pull for the host adapter. */
++    @JsonRequest
++    fun asterlynDocumentDiagnostics(request: Map<String, Any?>): CompletableFuture<Map<String, Any?>>
++    /** Complete bounded semantic preparation before reporting project readiness. */
++    @JsonRequest
++    fun asterlynPrepare(): CompletableFuture<Map<String, Any?>>
++    /** Find Kotlin usages of an exact imported Java/Kotlin declaration location. */
++    @JsonRequest
++    fun asterlynReferences(request: Map<String, Any?>): CompletableFuture<List<Location>>
+ }
+diff --git a/server/src/main/kotlin/org/javacs/kt/SourcePath.kt b/server/src/main/kotlin/org/javacs/kt/SourcePath.kt
+index dff7e0d..9aa47a9 100644
+--- a/server/src/main/kotlin/org/javacs/kt/SourcePath.kt
++++ b/server/src/main/kotlin/org/javacs/kt/SourcePath.kt
+@@ -19,6 +19,10 @@ import java.nio.file.Path
+ import java.nio.file.Paths
+ import java.net.URI
+ import java.util.concurrent.locks.ReentrantLock
++import java.util.concurrent.atomic.AtomicLong
++import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
++import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
++import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+ 
+ class SourcePath(
+     private val cp: CompilerClassPath,
+@@ -27,6 +31,13 @@ class SourcePath(
+     private val databaseService: DatabaseService
+ ) {
+     private val files = mutableMapOf<URI, SourceFile>()
++    private val epoch = AtomicLong()
++    private val contentEpoch: Long get() = epoch.get()
++    private fun requireEpoch(expected: Long) {
++        if (contentEpoch != expected) throw ResponseErrorException(
++            ResponseError(ResponseErrorCode.ContentModified, "Semantic source context changed", null)
++        )
++    }
+     private val parseDataWriteLock = ReentrantLock()
+ 
+     private val indexAsync = AsyncExecutor()
+@@ -47,6 +58,7 @@ class SourcePath(
+         val path: Path? = uri.filePath,
+         var parsed: KtFile? = null,
+         var compiledFile: KtFile? = null,
++        var compiledEpoch: Long = -1,
+         var compiledContext: BindingContext? = null,
+         var module: ModuleDescriptor? = null,
+         val language: Language? = null,
+@@ -66,6 +78,7 @@ class SourcePath(
+         fun clean() {
+             parsed = null
+             compiledFile = null
++            compiledEpoch = -1
+             compiledContext = null
+             module = null
+         }
+@@ -84,7 +97,7 @@ class SourcePath(
+         fun compileIfNull() = parseIfChanged().apply { doCompileIfNull() }
+ 
+         private fun doCompileIfNull() {
+-            if (compiledFile == null) {
++            if (compiledFile == null || compiledEpoch != contentEpoch) {
+                 doCompileIfChanged()
+             }
+         }
+@@ -95,21 +108,24 @@ class SourcePath(
+ 
+         private fun doCompile() {
+             LOG.debug("Compiling {}", path?.fileName)
++            val compileEpoch = contentEpoch
+ 
+             val oldFile = clone()
+-
+-            val (context, module) = cp.compiler.compileKtFile(parsed!!, allIncludingThis(), kind)
++            val input = parsed!!
++            val (context, module) = cp.compiler.compileKtFile(input, allIncludingThis(), kind)
+             parseDataWriteLock.withLock {
++                requireEpoch(compileEpoch)
+                 compiledContext = context
+                 this.module = module
+-                compiledFile = parsed
++                compiledFile = input
++                compiledEpoch = compileEpoch
+             }
+ 
+             refreshWorkspaceIndexes(listOfNotNull(oldFile), listOfNotNull(this))
+         }
+ 
+         private fun doCompileIfChanged() {
+-            if (parsed?.text != compiledFile?.text) {
++            if (parsed?.text != compiledFile?.text || compiledEpoch != contentEpoch) {
+                 doCompile()
+             }
+         }
+@@ -126,7 +142,7 @@ class SourcePath(
+         }
+ 
+         // Creates a shallow copy
+-        fun clone(): SourceFile = SourceFile(uri, content, path, parsed, compiledFile, compiledContext, module, language, isTemporary)
++        fun clone(): SourceFile = SourceFile(uri, content, path, parsed, compiledFile, compiledEpoch, compiledContext, module, language, isTemporary)
+     }
+ 
+     private fun sourceFile(uri: URI): SourceFile {
+@@ -147,9 +163,15 @@ class SourcePath(
+         }
+ 
+         if (uri in files) {
+-            sourceFile(uri).put(content)
++            val file = sourceFile(uri)
++            if (file.content != content) {
++                file.put(content)
++                // Compiled bindings expire lazily; retain all unchanged files' parsed PSI.
++                epoch.incrementAndGet()
++            }
+         } else {
+             files[uri] = SourceFile(uri, content, language = language, isTemporary = temporary)
++            epoch.incrementAndGet()
+         }
+     }
+ 
+@@ -168,9 +190,12 @@ class SourcePath(
+             cp.compiler.removeGeneratedCode(listOfNotNull(it.lastSavedFile))
+         }
+ 
+-        files.remove(uri)
++        if (files.remove(uri) != null) epoch.incrementAndGet()
+     }
+ 
++    /** Monotonic semantic-source epoch, including dependency-file edits. */
++    fun semanticEpoch(): Long = contentEpoch
++
+     /**
+      * Get the latest content of a file
+      */
+@@ -194,9 +219,10 @@ class SourcePath(
+      * Compile changed files
+      */
+     fun compileFiles(all: Collection<URI>): BindingContext {
+-        // Figure out what has changed
++        val requestEpoch = contentEpoch
++        // Figure out what has changed, including semantic changes in dependencies.
+         val sources = all.map { files[it]!! }
+-        val allChanged = sources.filter { it.content != it.compiledFile?.text }
++        val allChanged = sources.filter { it.content != it.compiledFile?.text || it.compiledEpoch != requestEpoch }
+         val (changedBuildScripts, changedSources) = allChanged.partition { it.kind == CompilationKind.BUILD_SCRIPT }
+ 
+         // Compile changed files
+@@ -218,16 +244,19 @@ class SourcePath(
+             // Get all the files. This will parse them if they changed
+             val allFiles = all()
+             beforeCompileCallback.invoke()
++            requireEpoch(requestEpoch)
+             val (context, module) = cp.compiler.compileKtFiles(parse.values, allFiles, kind)
+ 
+             // Update cache
+             for ((f, parsed) in parse) {
+                 parseDataWriteLock.withLock {
++                    requireEpoch(requestEpoch)
+                     if (f.parsed == parsed) {
+                         //only updated if the parsed file didn't change:
+                         f.compiledFile = parsed
+                         f.compiledContext = context
+                         f.module = module
++                        f.compiledEpoch = requestEpoch
+                     }
+                 }
+             }
+@@ -245,8 +274,9 @@ class SourcePath(
+ 
+         // Combine with past compilations
+         val same = sources - allChanged
+-        val combined = listOf(buildScriptsContext, sourcesContext).filterNotNull() + same.map { it.compiledContext!! }
++        val combined = (listOf(buildScriptsContext, sourcesContext).filterNotNull() + same.map { it.compiledContext!! }).distinct()
+ 
++        requireEpoch(requestEpoch)
+         return CompositeBindingContext.create(combined)
+     }
+ 
+@@ -339,11 +369,10 @@ class SourcePath(
+      * Recompiles all source files that are initialized.
+      */
+     fun refresh() {
+-        val initialized = files.values.any { it.parsed != null }
+-        if (initialized) {
+-            LOG.info("Refreshing source path")
++        epoch.incrementAndGet()
++        if (files.values.any { it.parsed != null }) {
++            LOG.info("Invalidating source path; compilation is deferred until a document is requested")
+             files.values.forEach { it.clean() }
+-            files.values.forEach { it.compile() }
+         }
+     }
+ 

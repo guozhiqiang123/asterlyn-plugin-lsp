@@ -1,3 +1,4 @@
+import {compilerClassLocations} from "./compiler-class-location.mjs";
 import { mkdir, readFile, readdir, stat, writeFile, rm, realpath, lstat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -156,7 +157,12 @@ export async function generateKaptStubs({model,stateDirectory,java,compilerJar,k
     check();
     // External edits during compilation cannot publish a stale disk snapshot.
     for(const [path,file]of snapshot.files)if(!overlayMap.has(uri(path))&&digest(await readFile(path,"utf8"))!==file.digest)throw Error("kapt-source-changed-during-generation");
-    return {root,perModuleRoots,sourceDigests,artifacts,persistSaved:async()=>{
+    const classEntries=new Map();
+    for(const value of originMaps.values())for(const [key,entry]of Object.entries(value.lines))if(!key.includes("#")){
+      if(!classEntries.has(entry.path))classEntries.set(entry.path,[]);classEntries.get(entry.path).push({key,offset:entry.line});
+    }
+    const classLocations=new Map([...classEntries].map(([path,entries])=>[path,compilerClassLocations(entries,snapshot.files.get(path).text,uri(path))]));
+    return {root,perModuleRoots,sourceDigests,artifacts,classDeclarations:file=>classLocations.get(asPath(file))??[],persistSaved:async()=>{
       for(const [key,entry]of pendingSaves){
         check();let saved=true;
         for(const path of entry.paths){const info=await lstat(path).catch(()=>null);if(!info?.isFile()||info.isSymbolicLink()||info.size>MAX_FILE_BYTES){saved=false;break;}const text=await readFile(path,"utf8").catch(()=>null);if(text===null||digest(text)!==snapshot.files.get(path).digest){saved=false;break;}}

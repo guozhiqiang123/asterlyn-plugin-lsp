@@ -9,6 +9,11 @@ import {generateKaptStubs} from "./kotlin-kapt-stubs.mjs";
 const pathOf = value => value instanceof URL ? fileURLToPath(value) : typeof value === "string" && value.startsWith("file:") ? fileURLToPath(value) : resolve(String(value));
 const uri = value => pathToFileURL(resolve(value)).href;
 const inside = (root, file) => file === root || file.startsWith(`${root}${sep}`);
+const cancellable=(pending,signal)=>new Promise((resolve,reject)=>{
+  const cancelled=()=>{signal?.removeEventListener("abort",cancelled);reject(Object.assign(Error("language-request-cancelled"),{code:-32800}));};
+  if(signal?.aborted){cancelled();return;}signal?.addEventListener("abort",cancelled,{once:true});
+  pending.then(resolve,reject).finally(()=>signal?.removeEventListener("abort",cancelled));
+});
 const moduleHash = value => createHash("sha256").update(value).digest("hex").slice(0, 12);
 async function findJar(root, name) {
   const file = join(root, name);
@@ -37,7 +42,8 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
   const includes = (id, value) => closure(id).some(module => [...module.sources, ...(module.generatedSources ?? [])].some(root => inside(root, pathOf(value))));
   const docEntries = () => documents instanceof Map ? [...documents.entries()] : Object.entries(documents);
   const docsFor = id => new Map(docEntries().filter(([key]) => includes(id, key)).map(([key, value]) => [key, {...value}]));
-  let latest = null, kaptPromise = null, revision = 0, builtRevision = -1, debounce = null;
+  let latest = null, kaptPromise = null, revision = 0, builtRevision = -1, debounce = null, semanticPreparing=0,navigationPending=0;
+  const javaAnchors=new Map();
   const stableRoots = new Map(), entries = new Map(), publishedKeys = new Map();
   const dirtyModules = new Set(byId.keys());
   const markDirty = file => {
@@ -134,10 +140,18 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
   };
   const warmProject = async () => {
     const opened=docEntries().find(([key])=>/\.kt$/u.test(key));
-    const id=opened?moduleFor(opened[0]):model.selection?.module;
+    const id=model.selection?.module??(opened?moduleFor(opened[0]):null);
     if(!id)return null;
     const hasKotlin=opened || latest?.perModuleRoots.some(result=>closure(id).some(module=>module.module===result.module)&&result.metadata.length);
-    return hasKotlin?startModule(id):null;
+    if(!hasKotlin)return null;
+    semanticPreparing++;
+    try {const service=await startModule(id),entry=entries.get(id);if(!entry||entry.service!==service)throw Error("kotlin-session-changed");
+    const started=performance.now();entry.refs++;
+    onProgress({phase:"indexing"});trace("kotlin-semantic-preparation-started",{backend:"kotlin",moduleHash:moduleHash(id)});
+    try {await service.peer.request("kotlin/asterlynPrepare",{},120000,abort.signal);}
+    finally {entry.refs--;entry.lastUsed=Date.now();trace("kotlin-semantic-preparation-completed",{backend:"kotlin",moduleHash:moduleHash(id),durationMs:Math.round(performance.now()-started)});}
+    return service;
+    }finally{semanticPreparing--;}
   };
   const readyFor = file => {const entry=entries.get(moduleFor(file));return !!entry?.service&&!entry.starting&&!entry.closing;};
   const applyOverlay = async (file, value) => {
@@ -212,17 +226,31 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
     }
     return result;
   };
+  const classDeclaration=(file,position,text)=>latest&&builtRevision===revision&&latest.sourceDigests.get(uri(pathOf(file)))===createHash("sha256").update(text).digest("hex")?latest.classDeclarations(file).find(location=>location.range.start.line===position.line&&position.character>=location.range.start.character&&position.character<location.range.end.character)??null:null;
   const javaDeclarations = async(location,jdtPeer,signal)=>{
     if(!latest)return [];
+    const snapshot=latest;
     const result=[];
-    for(const anchor of latest.javaDeclarations(location.uri,location.range.start)){
-      const id=latest.perModuleRoots.find(item=>inside(item.stubRoot,anchor.stub))?.module;
+    const classTarget=snapshot.classDeclarations(location.uri).some(item=>item.range.start.line===location.range.start.line&&item.range.start.character===location.range.start.character);
+    for(const anchor of snapshot.javaDeclarations(location.uri,location.range.start).filter(item=>!classTarget||!item.key.includes("#"))){
+      const id=snapshot.perModuleRoots.find(item=>inside(item.stubRoot,anchor.stub))?.module;
       if(!id)continue;
-      const stable=uri(join(stableRoots.get(id),anchor.stub.slice(latest.perModuleRoots.find(item=>item.module===id).stubRoot.length+1)));
-      const value=await jdtPeer.request("workspace/executeCommand",{command:"asterlyn.java.declarationLocation",arguments:[{uri:stable,key:anchor.key}]},25000,signal);
+      const stable=uri(join(stableRoots.get(id),anchor.stub.slice(snapshot.perModuleRoots.find(item=>item.module===id).stubRoot.length+1)));
+      const generation=snapshot.perModuleRoots.find(item=>item.module===id).key,key=JSON.stringify([generation,stable,anchor.key]);
+      let pending=javaAnchors.get(key);
+      if(!pending){if(javaAnchors.size>=128)javaAnchors.delete(javaAnchors.keys().next().value);pending=jdtPeer.request("workspace/executeCommand",{command:"asterlyn.java.declarationLocation",arguments:[{uri:stable,key:anchor.key}]},25000,abort.signal).then(value=>{if(latest!==snapshot)throw Error("stale-result");return value;});javaAnchors.set(key,pending);pending.catch(()=>{if(javaAnchors.get(key)===pending)javaAnchors.delete(key);});}
+      const value=await cancellable(pending,signal);if(latest!==snapshot)throw Error("stale-result");if(signal?.aborted)throw Object.assign(Error("language-request-cancelled"),{code:-32800});
       if(value)result.push(value);
     }
     return result;
+  };
+  const primeNavigation=async(file,jdtPeer)=>{
+    if(!latest||builtRevision!==revision||!jdtPeer)return;
+    const doc=documents instanceof Map?documents.get(file):documents[file];if(!doc||latest.sourceDigests.get(uri(pathOf(file)))!==createHash("sha256").update(doc.text).digest("hex"))return;
+    const snapshot=latest;navigationPending++;
+    try{for(const target of snapshot.classDeclarations(file).slice(0,16)){if(latest!==snapshot||builtRevision!==revision)break;await javaDeclarations(target,jdtPeer,abort.signal);}}
+    finally{navigationPending--;}
+
   };
   const close = async () => {
     abort.abort(); clearTimeout(debounce);
@@ -230,5 +258,5 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
     await kaptPromise?.catch(() => {}); await rm(sessionRoot, {recursive: true, force: true});
   };
   const readDependencySource = (target, document) => entries.get(moduleFor(document))?.service?.readDependencySource(target) ?? null;
-  return {moduleFor,references,javaDeclarations,extraSources: stableRoots, startIfNeeded,warmProject,readyFor,backendPending:()=>[...entries.values()].some(entry=>entry.starting), documentDiagnostics, readDependencySource, applyOverlay, closeOverlay, refreshSources, awaitJavaAbi: ensureAbi, javaAbiCurrent: file => latest !== null && (file ? !dirtyModules.has(moduleFor(file)) : builtRevision === revision), request, mapJavaDefinition, close};
+  return {moduleFor,references,classDeclaration,primeNavigation,javaDeclarations,extraSources: stableRoots, startIfNeeded,warmProject,readyFor,backendPending:()=>semanticPreparing>0||navigationPending>0||[...entries.values()].some(entry=>entry.starting), documentDiagnostics, readDependencySource, applyOverlay, closeOverlay, refreshSources, awaitJavaAbi: ensureAbi, javaAbiCurrent: file => latest !== null && (file ? !dirtyModules.has(moduleFor(file)) : builtRevision === revision), request, mapJavaDefinition, close};
 }

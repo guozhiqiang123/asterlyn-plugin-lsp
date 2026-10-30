@@ -260,7 +260,7 @@
       "url": "https://repo1.maven.org/maven2/org/xerial/sqlite-jdbc/3.48.0.0/sqlite-jdbc-3.48.0.0.jar"
     }
   ],
-  "patchSha256": "34da9608fdee9c69fc34744ef81213d82da9a7c3f924cf05e8c9a0595331f206",
+  "patchSha256": "59c33854344ac462569a9c19e91f7c650723ec9f5aeb0d615a46ea6ccb1ae22c",
   "runtimeLibraries": [
     {
       "basename": "annotations-24.0.0.jar",

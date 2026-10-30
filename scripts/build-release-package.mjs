@@ -1,7 +1,8 @@
+import {isDeepStrictEqual} from "node:util";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath,pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { c as createTar } from "tar";
 
@@ -16,6 +17,9 @@ const staging = path.join(releaseRoot, ".staging");
 await rm(releaseRoot, { recursive: true, force: true });
 await mkdir(path.join(staging, "runtime"), { recursive: true });
 await build({ entryPoints: [path.join(root, "src/plugin.ts")], outfile: path.join(staging, "runtime/plugin.js"), bundle: true, format: "esm", platform: "neutral", target: "es2022", legalComments: "none", sourcemap: false });
+// Inspect the built descriptor too: package metadata alone cannot prove activation identity.
+const runtime=await import(pathToFileURL(path.join(staging,"runtime/plugin.js")).href);
+if(runtime.LSP_PLUGIN?.id!==manifest.id||runtime.LSP_PLUGIN?.version!==manifest.version||runtime.LSP_PLUGIN_MANIFEST?.version!==manifest.version||!isDeepStrictEqual(runtime.LSP_PLUGIN_MANIFEST?.dependencies,manifest.dependencies))throw Error("built plugin identity or dependency contract differs from its manifest");
 await writeFile(path.join(staging, "LICENSE"), await readFile(path.join(root, "LICENSE")));
 
 async function copyTree(source, destination) {

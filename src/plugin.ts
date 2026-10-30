@@ -31,7 +31,7 @@ export const LSP_PLUGIN_MANIFEST: SdkInstallablePluginPackageManifest = Object.f
   schemaVersion: 3,
   sdkMajor: 1,
   id: LSP_PLUGIN_ID,
-  version: "0.3.7",
+  version: "0.3.8",
   nameKey: "name",
   descriptionKey: "description",
   localization: Object.freeze({
@@ -49,7 +49,7 @@ export const LSP_PLUGIN_MANIFEST: SdkInstallablePluginPackageManifest = Object.f
   }),
   settings: Object.freeze([]),
   capabilities: Object.freeze(["languageServices", "pluginDependencies", "packagedLanguageServices"]),
-  dependencies: Object.freeze([Object.freeze({ id: "dev.asterlyn.android-gradle", minimum: "0.6.0", maximumExclusive: "1.0.0" })]),
+  dependencies: Object.freeze([Object.freeze({ id: "dev.asterlyn.android-gradle", minimum: "0.6.3", maximumExclusive: "1.0.0" })]),
   permissions: Object.freeze(["host.language-services.execute"]),
   languageServers: Object.freeze([ANDROID_PROFILE]),
   distribution: Object.freeze({

@@ -43,3 +43,7 @@
 - `npm run verify`：13 项通过，包括无文档自动模型启动、真实失败分类、调试开关的端到端 stdio 验证。
 - 开发探针支持 `ASTERLYN_PROJECT_INDEX_FIRST=1` 在未打开文档时等待索引，以及 `ASTERLYN_PROJECT_DEFINITIONS_ONLY=1` 仅验证跳转；证据明确记录未执行的其他检查。
 - 真实项目和宿主安装验收由宿主生命周期计划统一记录。
+
+### 包级激活一致性补强
+
+原生 helper 联调发现清单/包版本已升至 0.3.8，但中立 descriptor 仍导出 0.3.7，激活正确拒绝。已同步 descriptor 的版本和 Gradle 最低依赖；单测比较真实 package.json/manifest.json，打包脚本还会实际导入产物核对身份及依赖，阻止仅改清单就产生不可激活包。此前无效包未覆盖安装。

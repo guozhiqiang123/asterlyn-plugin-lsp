@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {readFileSync} from "node:fs";
+const packageJson=JSON.parse(readFileSync(new URL("../package.json",import.meta.url),"utf8"));
+const manifest=JSON.parse(readFileSync(new URL("../manifest.json",import.meta.url),"utf8"));
 
 import {
   LSP_PLUGIN,
@@ -16,7 +19,9 @@ const context = {
 
 test("identity and schema-3 metadata are stable", () => {
   assert.equal(LSP_PLUGIN.id, LSP_PLUGIN_ID);
-  assert.equal(LSP_PLUGIN.version, "0.3.7");
+  assert.equal(LSP_PLUGIN.version,manifest.version);
+  assert.equal(LSP_PLUGIN_MANIFEST.version,packageJson.version);
+  assert.deepEqual(LSP_PLUGIN_MANIFEST.dependencies,manifest.dependencies);
   assert.equal(LSP_PLUGIN_MANIFEST.schemaVersion, 3);
   assert.deepEqual(LSP_PLUGIN_MANIFEST.capabilities, ["languageServices", "pluginDependencies", "packagedLanguageServices"]);
   assert.deepEqual(LSP_PLUGIN_MANIFEST.permissions, ["host.language-services.execute"]);
@@ -52,7 +57,7 @@ test("activation contributes independent TypeScript and Rust declarations and di
 });
 
 test("LSP enablement requires the Android build provider independently of document language", () => {
-  assert.deepEqual(LSP_PLUGIN_MANIFEST.dependencies, [{ id: "dev.asterlyn.android-gradle", minimum: "0.6.0", maximumExclusive: "1.0.0" }]);
+  assert.deepEqual(LSP_PLUGIN_MANIFEST.dependencies, [{ id: "dev.asterlyn.android-gradle", minimum: "0.6.3", maximumExclusive: "1.0.0" }]);
   assert.ok(Object.isFrozen(LSP_PLUGIN_MANIFEST.dependencies));
 });
 

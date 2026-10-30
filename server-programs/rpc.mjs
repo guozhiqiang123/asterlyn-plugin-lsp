@@ -26,7 +26,7 @@ export class RpcPeer extends EventEmitter {
       else {
         const pending = this.#pending.get(message.id); if (!pending) continue;
         this.#pending.delete(message.id); clearTimeout(pending.timer);
-        if (message.error) pending.reject(Object.assign(new Error("language-request-rejected"), {code: message.error.code})); else pending.resolve(message.result);
+        if (message.error) pending.reject(Object.assign(new Error(pending.method==="asterlyn/workspaceModel"&&typeof message.error.message==="string"&&/^[a-z][a-z0-9.-]{0,79}$/u.test(message.error.message)?message.error.message:"language-request-rejected"), {code: message.error.code})); else pending.resolve(message.result);
       }
     }
   }
@@ -43,7 +43,7 @@ export class RpcPeer extends EventEmitter {
     const id = ++this.#sequence;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.#pending.delete(id); this.notify("$/cancelRequest", {id}); reject(new Error("language-request-timeout")); }, timeout);
-      this.#pending.set(id, {resolve, reject, timer}); this.send({jsonrpc: "2.0", id, method, params});
+      this.#pending.set(id, {resolve, reject, timer,method}); this.send({jsonrpc: "2.0", id, method, params});
     });
   }
   close() { for (const value of this.#pending.values()) {clearTimeout(value.timer); value.reject(new Error("language-peer-closed"));} this.#pending.clear(); }

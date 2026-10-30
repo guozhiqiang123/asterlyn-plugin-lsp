@@ -38,7 +38,7 @@ async function allFiles(root, result = []) {
  * translate JDT declaration ranges back to Kotlin. No annotation processor is
  * executed (aptMode=stubs).
  */
-export async function generateKaptStubs({ model, stateDirectory, java, compilerJar, kaptJar, runtimeJars = [], overlays = {}, timeoutMs = 120000, signal }) {
+export async function generateKaptStubs({ model, stateDirectory, java, compilerJar, kaptJar, runtimeJars = [], overlays = {}, timeoutMs = 120000, signal, onProgress = () => {} }) {
   if (!model?.modules?.length || !compilerJar || !kaptJar) throw new Error("kapt-stub-configuration-invalid");
   const state = resolve(asPath(stateDirectory));
   const root = join(state, `kapt-stubs-${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -57,6 +57,7 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
     return [module, ...(module.projectDependencies ?? []).flatMap((dependency) => dependencyClosure(modulesByName.get(dependency.module), seen))];
   };
   for (let index = 0; index < model.modules.length; index++) {
+    onProgress({phase:"sources",completed:index,total:model.modules.length,unit:"modules"});
     const module = model.modules[index];
     const moduleRoot = join(root, `module-${index}`);
     const sourcesRoot = join(moduleRoot, "sources");
@@ -121,6 +122,7 @@ export async function generateKaptStubs({ model, stateDirectory, java, compilerJ
     });
     perModuleRoots.push({ module: module.module ?? module.name ?? `module-${index}`, stubRoot: stubsRoot, classRoot: classesRoot, metadata: ownMetadata, allMetadata: metadata });
   }
+  onProgress({phase:"sources",completed:model.modules.length,total:model.modules.length,unit:"modules"});
   return { root, perModuleRoots, sourceDigests, metadata: originMaps, mapOriginByKey: async (stubUri, descriptor) => {
     const stubPath = asPath(stubUri);
     const metadataFile = originMaps.has(stubPath.replace(/\.java$/, ".kapt_metadata"))

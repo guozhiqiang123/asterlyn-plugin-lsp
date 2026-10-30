@@ -16,7 +16,7 @@ async function findJar(root, name) {
 }
 
 /** One private source view per module dependency closure; at most two lazy Kotlin JVMs. */
-export async function prepareAndroidKotlin({model, stateDirectory, options, documents = new Map(), onDiagnostics, onChanged, onBackendReady, onJavaAbiReady = () => {}, onError = () => {}}) {
+export async function prepareAndroidKotlin({model, stateDirectory, options, documents = new Map(), onDiagnostics, onChanged, onBackendReady, onJavaAbiReady = () => {}, onError = () => {}, onProgress = () => {}, trace = () => {}}) {
   const sessionRoot = join(pathOf(stateDirectory), `android-kotlin-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   await mkdir(sessionRoot, {recursive: true});
   const abort = new AbortController(), compilerRoot = pathOf(options.components["kotlin-compiler-bridge"].root);
@@ -64,7 +64,9 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
     await onChanged?.(generated.perModuleRoots.flatMap(result => result.metadata.map(metadata => ({uri: uri(join(stableRoots.get(result.module), metadata.slice(result.stubRoot.length + 1).replace(/\.kapt_metadata$/u, ".java"))), type: 1}))));
   };
   const regenerate = async () => {
-    const generated = await generateKaptStubs({model, stateDirectory: sessionRoot, java, compilerJar, kaptJar, runtimeJars, overlays: new Map(docEntries().map(([key, value]) => [key, {...value}])), signal: abort.signal});
+    const started=performance.now();trace("kotlin-abi-started",{backend:"compiler"});
+    const generated = await generateKaptStubs({model, stateDirectory: sessionRoot, java, compilerJar, kaptJar, runtimeJars, overlays: new Map(docEntries().map(([key, value]) => [key, {...value}])), signal: abort.signal,onProgress});
+    trace("kotlin-abi-completed",{backend:"compiler",durationMs:Math.round(performance.now()-started),completed:generated.perModuleRoots.length});
     try {await copyStable(generated);} catch (error) {await rm(generated.root, {recursive: true, force: true}); throw error;}
     const previous = latest; latest = generated;
     if (previous) await rm(previous.root, {recursive: true, force: true});
@@ -104,11 +106,13 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
       return startModule(id);
     }
     entry = {id, refs: 0, lastUsed: Date.now(), service: null, starting: null}; entries.set(id, entry);
+    const started=performance.now();onProgress({phase:"backend"});trace("kotlin-module-started",{backend:"kotlin",moduleHash:moduleHash(id)});
     entry.starting = (async () => {
       const initialDocs = docsFor(id);
       const onClosed = () => {
         if (!abort.signal.aborted && !entry.closing && entries.get(id) === entry) {
           entries.delete(id); void entry.service?.close(); onError(Error("kotlin-backend-exited"));
+          trace("kotlin-module-exited",{backend:"kotlin",moduleHash:moduleHash(id)});
         }
       };
       const service = await startKotlin({model: {...model, modules: closure(id)}, stateDirectory: join(sessionRoot, `kotlin-${moduleHash(id)}`), java, component: {distributionRoot: languageRoot}, overlays: initialDocs, configuration: {onError, onClosed, onDiagnostics: params => {
@@ -118,15 +122,23 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
       if (abort.signal.aborted) {await service.close(); throw Error("android-language-session-ended");}
       for (const [key, value] of docsFor(id)) await service.applyOverlay(key, value);
       for (const key of initialDocs.keys()) if (!(documents instanceof Map ? documents.has(key) : key in documents)) await service.closeOverlay(key);
-      if (!abort.signal.aborted) onBackendReady?.();
+      trace("kotlin-module-ready",{backend:"kotlin",moduleHash:moduleHash(id),durationMs:Math.round(performance.now()-started)});
       return service;
-    })().catch(async error => {entries.delete(id); await entry.service?.close(); throw error;}).finally(() => {entry.starting = null;});
+    })().catch(async error => {entries.delete(id); await entry.service?.close(); throw error;}).finally(() => {entry.starting = null;if(entry.service&&!abort.signal.aborted)onBackendReady?.();});
     return entry.starting;
   };
   const startIfNeeded = async file => {
     const id = file ? moduleFor(file) : docEntries().filter(([key]) => /\.kt$/u.test(key)).map(([key]) => moduleFor(key)).find(Boolean);
     return id ? startModule(id) : null;
   };
+  const warmProject = async () => {
+    const opened=docEntries().find(([key])=>/\.kt$/u.test(key));
+    const id=opened?moduleFor(opened[0]):model.selection?.module;
+    if(!id)return null;
+    const hasKotlin=opened || latest?.perModuleRoots.some(result=>closure(id).some(module=>module.module===result.module)&&result.metadata.length);
+    return hasKotlin?startModule(id):null;
+  };
+  const readyFor = file => {const entry=entries.get(moduleFor(file));return !!entry?.service&&!entry.starting&&!entry.closing;};
   const applyOverlay = async (file, value) => {
     const previous = documents instanceof Map ? documents.get(file) : documents[file];
     if (previous?.version === value?.version && previous?.text === value?.text) return;
@@ -183,5 +195,5 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
     await kaptPromise?.catch(() => {}); await rm(sessionRoot, {recursive: true, force: true});
   };
   const readDependencySource = (target, document) => entries.get(moduleFor(document))?.service?.readDependencySource(target) ?? null;
-  return {extraSources: stableRoots, startIfNeeded, documentDiagnostics, readDependencySource, applyOverlay, closeOverlay, refreshSources, awaitJavaAbi: ensureAbi, javaAbiCurrent: () => builtRevision === revision && latest !== null, request, mapJavaDefinition, close};
+  return {extraSources: stableRoots, startIfNeeded,warmProject,readyFor,backendPending:()=>[...entries.values()].some(entry=>entry.starting), documentDiagnostics, readDependencySource, applyOverlay, closeOverlay, refreshSources, awaitJavaAbi: ensureAbi, javaAbiCurrent: () => builtRevision === revision && latest !== null, request, mapJavaDefinition, close};
 }

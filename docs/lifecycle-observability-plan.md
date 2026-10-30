@@ -32,3 +32,14 @@
 ## 记录
 
 - 文档阶段：基线干净；原生摘要显示 model-unavailable，但当前封装丢失了具体失败原因。
+
+## 2026-10-30 实施记录
+
+- 0.3.8 要求 Android Gradle >=0.6.3，确保含有效项目配置读取与自动 AGP 选择修复。
+- `model → sources(实际模块完成数/总数) → backend → indexing → ready/failed` 通过原有状态通知传递；不编造整体百分比。
+- 没有打开源码时，也会准备 Gradle 模型、Java 索引与所选模块的 Kotlin 后端；其他 Kotlin 模块按需启动，仍最多保留两个会话。
+- Java 后端就绪即可服务；Kotlin 冷模块请求快速返回准备中，不拖住用户请求。真实配置或后端错误不再统一伪装成 ContentModified/indexing。
+- 调试默认关闭，支持初始化标志与 `asterlyn/setDebugTracing` 当前会话开关；不向底层 JVM 开启原始 LSP verbose trace。
+- `npm run verify`：13 项通过，包括无文档自动模型启动、真实失败分类、调试开关的端到端 stdio 验证。
+- 开发探针支持 `ASTERLYN_PROJECT_INDEX_FIRST=1` 在未打开文档时等待索引，以及 `ASTERLYN_PROJECT_DEFINITIONS_ONLY=1` 仅验证跳转；证据明确记录未执行的其他检查。
+- 真实项目和宿主安装验收由宿主生命周期计划统一记录。

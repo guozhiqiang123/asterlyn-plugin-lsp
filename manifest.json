@@ -2,7 +2,7 @@
   "schemaVersion": 3,
   "sdkMajor": 1,
   "id": "dev.asterlyn.lsp",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "nameKey": "name",
   "descriptionKey": "description",
   "localization": {
@@ -46,7 +46,7 @@
   "dependencies": [
     {
       "id": "dev.asterlyn.android-gradle",
-      "minimum": "0.6.0",
+      "minimum": "0.6.3",
       "maximumExclusive": "1.0.0"
     }
   ],

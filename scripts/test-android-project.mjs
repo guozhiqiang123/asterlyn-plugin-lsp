@@ -12,6 +12,7 @@ const [packageRoot, modelFile, optionsFile, probesFile, evidenceFile] = process.
 if (!evidenceFile) throw Error("usage: test-android-project.mjs <extracted-package> <model.json> <options.json> <probes.json> <evidence.json>");
 const bytes = await readFile(modelFile), model = JSON.parse(bytes), options = JSON.parse(await readFile(optionsFile));
 const probes = JSON.parse(await readFile(probesFile)), state = await mkdtemp(join(tmpdir(), "asterlyn-project-lsp-"));
+const indexFirst=process.env.ASTERLYN_PROJECT_INDEX_FIRST==="1",definitionsOnly=process.env.ASTERLYN_PROJECT_DEFINITIONS_ONLY==="1";
 const hash = value => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 const docs = new Map();
 for (const probe of probes) {
@@ -63,12 +64,17 @@ async function request(method, doc, probe, extra = {}) {
 try {
   await peer.request("initialize", {rootUri: pathToFileURL(model.buildRoot).href, initializationOptions: {analysis: {...options, stateDirectory: state}}});
   peer.notify("initialized", {});
-  for (const doc of docs.values()) peer.notify("textDocument/didOpen", {textDocument: {uri: doc.uri, text: doc.text, version: doc.version, languageId: doc.languageId}});
+  const openDocuments=()=>{for (const doc of docs.values()) peer.notify("textDocument/didOpen", {textDocument: {uri: doc.uri, text: doc.text, version: doc.version, languageId: doc.languageId}});};
+  if(!indexFirst)openDocuments();
   // Real multi-module imports are measured under the user's normal machine load. Individual
   // compiler jobs remain bounded; this acceptance budget must not be a hidden product SLA.
   const deadline = Date.now() + 600000;
-  while (!ready) {if (Date.now() > deadline) throw Error("project-indexing-timeout"); await pause(100);}
-  summary.readyMs = Date.now() - began;
+  while (!ready||(indexFirst&&summary.statuses.at(-1)?.progress?.phase!=="ready")) {
+    const status=summary.statuses.at(-1);if(status?.health==="error"||(status?.quiescent&&status?.progress?.phase==="failed"))throw Error(status.code??"language-backend-unavailable");
+    if (Date.now() > deadline) throw Error("project-indexing-timeout"); await pause(100);
+  }
+  summary.readyMs = Date.now() - began;summary.indexedBeforeDocuments=indexFirst;summary.diagnosticsTested=!definitionsOnly;summary.extendedFeaturesTested=!definitionsOnly;
+  if(indexFirst)openDocuments();
   for (const probe of probes) {
     const doc = docs.get(probe.path), started = Date.now(), result = await request("definition", doc, probe);
     const targets = (Array.isArray(result) ? result : [result]).filter(Boolean);
@@ -81,6 +87,7 @@ try {
       const at = point => source.text.split("\n").slice(0, point.line).reduce((sum, line) => sum + line.length + 1, 0) + point.character;
       assert.equal(source.text.slice(at(range.start), at(range.end)), probe.readonlySymbol, "compiled definition range misses its selected symbol");
     } else assert.ok(targets.some(target => (target.uri ?? target.targetUri)?.endsWith(probe.target)), `definition did not reach ${probe.target}`);
+    if(definitionsOnly){summary.checks.push({language:doc.languageId,definition:true,targetCount:targets.length,durationMs:Date.now()-started});continue;}
     const hover = await request("hover", doc, probe);
     assert.ok(hover, "hover is empty");
     if (probe.readonlySymbol) assert.ok(JSON.stringify(hover).includes(probe.readonlySymbol), "compiled-symbol hover is missing its declaration");
@@ -90,7 +97,7 @@ try {
     console.log(JSON.stringify({stage: "semantic-checked", ...summary.checks.at(-1)}));
     await writeFile(evidenceFile, `${JSON.stringify({...summary, inProgress: true}, null, 2)}\n`);
   }
-  for (const language of ["java", "kotlin"]) {
+  if(!definitionsOnly)for (const language of ["java", "kotlin"]) {
     const doc = [...docs.values()].find(doc => doc.languageId === language), original = doc.text;
     const baseline = await request("diagnostic", doc, {});
     const baselineErrors = baseline.items.filter(item => item.severity === 1);

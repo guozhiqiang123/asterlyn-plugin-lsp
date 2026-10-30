@@ -15,15 +15,19 @@ let loading = null, poll, closed = false, indexing = true, epoch = 0, revision =
 let overlayQueue = Promise.resolve(), overlayPending = 0, needsRefresh = false, repairAt = 0;
 let lastStatus = "";
 let retryAt = 0, failureCount = 0;
+let debugTracing=false,progress={phase:"model"},lastFailure=null,forceModel=false;
 const hash = text => `sha256:${createHash("sha256").update(text).digest("hex")}`;
 const pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 const errorCode = error => /^[a-z][a-z0-9.-]{1,80}$/u.test(error?.message) ? error.message : "backend-failed";
 function status(ready, health = "ok", code) {
-  const params = {health, quiescent: ready, ...(code ? {code} : {})};
+  const params = {health, quiescent: ready, ...(code ? {code} : {}),progress};
   if (JSON.stringify(params) !== lastStatus) {lastStatus = JSON.stringify(params); host.notify("experimental/serverStatus", params);}
 }
+function trace(code,details={}){if(debugTracing)host.notify("asterlyn/trace",{code,details});}
+function stage(value){progress=value;status(!indexing);}
 function failure(error) {
   indexing = true; revision++; const code = errorCode(error);
+  lastFailure=code;progress={phase:"failed"};trace(code,{attempt:failureCount+1});
   failureCount++; retryAt = Date.now() + Math.min(300000, 10000 * 2 ** Math.min(failureCount, 5));
   status(false, "error", code);
   if (["android-compile-artifact-missing", "model-integrity"].includes(code) && Date.now() - repairAt > 30000) {needsRefresh = true; repairAt = Date.now();}
@@ -103,7 +107,8 @@ async function load(refresh = false) {
   if (loading || closed || (!refresh && Date.now() < retryAt)) return loading;
   const own = ++epoch;
   loading = (async () => {
-    const reference = await host.request("asterlyn/workspaceModel", {refresh: refresh || needsRefresh}, 315000); needsRefresh = false;
+    if(!backend){lastFailure=null;stage({phase:"model"});}
+    const reference = await host.request("asterlyn/workspaceModel", {refresh: refresh || needsRefresh || forceModel}, 315000); needsRefresh = false;forceModel=false;
     if (closed || own !== epoch) return;
     if (reference?.schema !== 1 || !Number.isSafeInteger(reference.generation) || !isAbsolute(reference.path) || reference.bytes > 8 * 1024 * 1024) throw Error("invalid-model-reference");
     if (reference.generation === modelGeneration && backend) {
@@ -111,6 +116,7 @@ async function load(refresh = false) {
       return;
     }
     indexing = true; revision++; status(false, "ok", "preparing-language-model");
+    stage({phase:"sources"});trace("model-ready",{bytes:reference.bytes,version:reference.generation});
     const metadata = await stat(reference.path); if (!metadata.isFile() || metadata.size !== reference.bytes) throw Error("model-integrity");
     const bytes = await readFile(reference.path); if (bytes.length !== reference.bytes || hash(bytes) !== reference.digest) throw Error("model-integrity");
     const model = JSON.parse(bytes); await stopBackend();
@@ -126,15 +132,17 @@ async function load(refresh = false) {
     let partialJava = false;
     if (options.components["kotlin-compiler-bridge"]) {
       languageContext = await prepareAndroidKotlin({model, stateDirectory: state, options, documents: new Map([...documents].map(([uri, doc]) => [uri, {...doc}])),
-        onBackendReady: () => {if(!closed)status(!indexing);},
-        onJavaAbiReady: () => {if (!closed && backendReady) {status(!indexing); refreshDiagnostics();}},
+        onProgress:value=>{if(!closed)stage(value);},trace,
+        onBackendReady: () => {if(!closed){if(!indexing)progress={phase:languageContext?.backendPending()?"backend":"ready"};status(!indexing);}},
+        onJavaAbiReady: () => {if (!closed && backendReady) {if(!languageContext?.backendPending())progress={phase:"ready"};status(!indexing); refreshDiagnostics();}},
         onDiagnostics: params => {const doc = documents.get(params?.uri); if (!overlayPending && doc?.version === params?.version && Array.isArray(params.diagnostics)) {host.notify("textDocument/publishDiagnostics", params);}},
-        onChanged: async changes => {if (!backendReady) return; backend.notify("workspace/didChangeWatchedFiles", {changes: changes.map(item => typeof item === "string" ? {uri: item, type: 2} : item)}); await backend.request("workspace/executeCommand", {command: "asterlyn.java.refreshModel", arguments: []}); if(!indexing)status(true);refreshDiagnostics();}, onError: error => {if(closed)return;if(error?.message==="kotlin-backend-exited"){refreshDiagnostics();}status(!indexing,"warning",error?.message==="kotlin-backend-exited"?"kotlin-backend-exited":"java-analysis-awaiting-kotlin");}});
+        onChanged: async changes => {if (!backendReady) return; backend.notify("workspace/didChangeWatchedFiles", {changes: changes.map(item => typeof item === "string" ? {uri: item, type: 2} : item)}); await backend.request("workspace/executeCommand", {command: "asterlyn.java.refreshModel", arguments: []}); if(!indexing)status(true);refreshDiagnostics();}, onError: error => {if(closed)return;trace(errorCode(error),{backend:"kotlin"});if(error?.message==="kotlin-backend-exited"){progress={phase:"failed"};refreshDiagnostics();}status(!indexing,"warning",error?.message==="kotlin-backend-exited"?"kotlin-backend-exited":"java-analysis-awaiting-kotlin");}});
       try {await languageContext.awaitJavaAbi();} catch {partialJava = true;}
     }
     const view = await createJavaModel(model, state, languageContext?.extraSources), java = options.tools?.serverJava?.java, jdt = options.components?.jdtls?.root;
     if (!isAbsolute(java) || !isAbsolute(jdt)) throw Error("analysis-components-unavailable");
     const launch = await prepareJdt(jdt, state);
+    stage({phase:"backend"});trace("java-started",{backend:"java"});
     child = spawn(java, ["-Xmx1024m", "-Declipse.application=org.eclipse.jdt.ls.core.id1", "-Dosgi.bundles.defaultStartLevel=4", "-Declipse.product=org.eclipse.jdt.ls.core.product", "--add-modules=ALL-SYSTEM", "--add-opens", "java.base/java.util=ALL-UNNAMED", "--add-opens", "java.base/java.lang=ALL-UNNAMED", "-jar", launch.launcher, "-configuration", launch.configuration, "-data", launch.data], {cwd: state, env: {HOME: process.env.HOME, PATH: join(options.tools.serverJava.home, "bin"), JAVA_HOME: options.tools.serverJava.home, TMPDIR: process.env.TMPDIR}, stdio: ["pipe", "pipe", "pipe"]});
     const peer = backend = new RpcPeer(child.stdout, child.stdin); child.stderr.on("data", () => {});
     child.on("error", () => {if (backend === peer) {backendReady = false; failure(Error("java-backend-start-failed"));}});
@@ -150,12 +158,17 @@ async function load(refresh = false) {
     const ready = new Promise((resolve, reject) => {const timer = setTimeout(() => reject(Error("java-import-timeout")), 90000); peer.on("notification", notification => {if (notification.method === "language/status" && notification.params?.type === "Started") {clearTimeout(timer); resolve();}}); peer.once("closed", () => {clearTimeout(timer); reject(Error("java-backend-closed"));});}); ready.catch(() => {});
     const folders = view.projects.map(path => ({uri: pathToFileURL(path).href, name: path.split(/[\\/]/u).at(-1)}));
     await peer.request("initialize", {processId: process.pid, rootUri: folders[0].uri, workspaceFolders: folders, capabilities: {general: {positionEncodings: ["utf-16"]}, workspace: {configuration: true, workspaceFolders: true, applyEdit: false}, textDocument: {definition: {linkSupport: false}}, window: {workDoneProgress: true}}, initializationOptions: {settings, workspaceFolders: folders.map(folder => folder.uri), bundles: [fileURLToPath(new URL("./java-bridge.jar", import.meta.url))], extendedClientCapabilities: {classFileContentsSupport: true, progressReportProvider: true}}}, 60000);
-    peer.notify("initialized", {}); await ready;
+    peer.notify("initialized", {});stage({phase:"indexing"}); await ready;trace("java-ready",{backend:"java"});
     if (closed || own !== epoch) {await stopBackend(); return;}
     backendReady = true;
     for (const [uri, doc] of documents) if (doc.languageId === "java") peer.notify("textDocument/didOpen", {textDocument: {uri, languageId: "java", version: doc.version, text: doc.text}});
     if(languageContext)for(const [uri,doc]of documents)await languageContext.applyOverlay(uri,{...doc});
-    await languageContext?.startIfNeeded(); modelGeneration = reference.generation; indexing = false; failureCount = 0; retryAt = 0; status(true,partialJava?"warning":"ok",partialJava?"java-analysis-awaiting-kotlin":undefined); refreshDiagnostics();
+    modelGeneration=reference.generation;indexing=false;lastFailure=null;
+    stage({phase:"backend"});status(true,"warning","java-analysis-awaiting-kotlin");
+    let kotlinFailure=false;
+    await languageContext?.warmProject().catch(error=>{kotlinFailure=true;trace(errorCode(error),{backend:"kotlin"});});
+    progress={phase:kotlinFailure||partialJava?"failed":"ready"};failureCount=0;retryAt=0;
+    status(true,kotlinFailure||partialJava?"warning":"ok",kotlinFailure?"kotlin-backend-unavailable":partialJava?"java-analysis-awaiting-kotlin":undefined);refreshDiagnostics();
   })().catch(error => {if (!closed) failure(error);}).finally(() => {loading = null;});
   return loading;
 }
@@ -180,13 +193,16 @@ async function diagnostics(uri, doc, version) {
 host.on("request", async request => {
   if (++active > 64) {active--; host.reject(request.id, -32000); return;}
   try {
-    if (request.method === "initialize") {options = request.params?.initializationOptions?.analysis; if (!isAbsolute(options?.stateDirectory)) throw Error("analysis-options"); options.stateDirectory=await realpath(options.stateDirectory);host.reply(request.id, {capabilities: {positionEncoding: "utf-16", textDocumentSync: {openClose: true, change: 2}, definitionProvider: true, referencesProvider: true, hoverProvider: true, completionProvider: {triggerCharacters: ["."]}, diagnosticProvider: {interFileDependencies: true, workspaceDiagnostics: false}}, serverInfo: {name: "Asterlyn Android language adapter", version: "1"}}); return;}
+    if (request.method === "initialize") {options = request.params?.initializationOptions?.analysis; if (!isAbsolute(options?.stateDirectory)) throw Error("analysis-options"); debugTracing=options.debugTrace===true;forceModel=options.refreshModel===true;options.stateDirectory=await realpath(options.stateDirectory);host.reply(request.id, {capabilities: {positionEncoding: "utf-16", textDocumentSync: {openClose: true, change: 2}, definitionProvider: true, referencesProvider: true, hoverProvider: true, completionProvider: {triggerCharacters: ["."]}, diagnosticProvider: {interFileDependencies: true, workspaceDiagnostics: false}}, serverInfo: {name: "Asterlyn Android language adapter", version: "1"}}); return;}
     if (request.method === "shutdown") {closed = true; clearInterval(poll); await stopBackend(); host.reply(request.id, null); return;}
     // More notifications can arrive while an earlier overlay is awaited. Drain the current queue
     // before capturing the request's analysis revision, rather than observing a half-applied batch.
     let queued; do {queued = overlayQueue; await queued;} while (queued !== overlayQueue);
-    if (!backend || indexing) throw Error("android-indexing");
+    if (!backend || indexing) throw Error(lastFailure??"android-indexing");
     const params = request.params, doc = document(params?.textDocument?.uri), version = doc.version, current = revision;
+    if(doc.languageId==="kotlin"&&!languageContext?.readyFor(params.textDocument.uri)){
+      void languageContext?.startIfNeeded(params.textDocument.uri).catch(error=>{progress={phase:"failed"};trace(errorCode(error),{backend:"kotlin"});status(!indexing,"warning","kotlin-backend-unavailable");});throw Error("android-indexing");
+    }
     let result;
     if (request.method === "textDocument/diagnostic") result = await diagnostics(params.textDocument.uri, doc, version);
     else {
@@ -197,11 +213,12 @@ host.on("request", async request => {
     }
     if (doc.version !== version || current !== revision) throw Error("stale-result");
     host.reply(request.id, result);
-  } catch(error) {host.notify("asterlyn/trace",{code:errorCode(error),operation:request.method});host.reject(request.id, -32801, "Language analysis is indexing or its source context has changed.");}
+  } catch(error) {const code=errorCode(error);trace(code);const transient=error?.code===-32801||["android-indexing","stale-result","stale-diagnostics","kotlin-session-busy","working-copy-not-current"].includes(code);host.reject(request.id, transient?-32801:-32603, transient?"Language analysis is indexing or its source context has changed.":code);}
   finally {active--;}
 });
 host.on("notification", notification => {
   const {method, params} = notification;
+  if(method==="asterlyn/setDebugTracing"){debugTracing=params?.enabled===true;return;}
   if (method === "initialized") {status(false); void load(); poll = setInterval(() => void load(), 5000); poll.unref();}
   else if (method === "asterlyn/modelInvalidated") {indexing = true; revision++; modelGeneration = null; retryAt = 0; status(false); void load();}
   else if (method === "textDocument/didOpen") {const doc = params.textDocument; if (documents.size >= 32 && !documents.has(doc.uri)) return; documents.set(doc.uri, {languageId: doc.languageId, version: doc.version, text: doc.text}); revision++; if (backendReady) {if (doc.languageId === "java") backend.notify(method, params); void queueOverlay(doc.uri, doc);} }

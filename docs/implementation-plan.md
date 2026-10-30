@@ -101,3 +101,7 @@ Java/Kotlin core is implemented for host 0.1.22 and plugin 0.3.0. Historical JP0
 are retained as investigation history; current capabilities, pinned components, functional tests,
 resource samples and explicit remaining limits are in [Android acceptance](android-acceptance-2026-10-27.md).
 Groovy/DSL/resources and full large-project acceptance remain separate work.
+
+## Project lifecycle and observability follow-up (2026-10-30)
+
+See [lifecycle and observability plan](lifecycle-observability-plan.md) for persistent host approval, automatic model-backed startup, real indexing progress and opt-in debug tracing.

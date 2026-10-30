@@ -6,7 +6,7 @@ export function verifyReleasePolicy(policy,pkg,lock,manifest,vendorDigest,tag=''
  if(pkg.dependencies['@asterlyn/plugin-sdk']!==`file:vendor/${policy.host.sdkAsset}`||vendorDigest!==policy.host.sdkSha256)throw Error('Vendored SDK provenance mismatch');
  if(policy.dependency.tag!==`v${manifest.dependencies[0].minimum}`)throw Error('Required plugin Release mismatch');
 }
-export function verifyPublishedSdk(policy,release,digest){if(release.tagName!==policy.host.tag||release.isDraft||release.isPrerelease||digest!==policy.host.sdkSha256)throw Error('SDK must match the exact published stable host Release');}
+export function verifyPublishedSdk(policy,release,digest){if(release.tagName!==policy.host.tag||release.isDraft!==false||release.isPrerelease!==false||digest!==policy.host.sdkSha256)throw Error('SDK must match the exact published stable host Release');}
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const root=fileURLToPath(new URL('../',import.meta.url)),json=async p=>JSON.parse(await readFile(join(root,p),'utf8'));
  const [policy,pkg,lock,manifest]=await Promise.all(['release-policy.json','package.json','package-lock.json','manifest.json'].map(json));

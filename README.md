@@ -2,7 +2,7 @@
 
 Independent optional TypeScript/JavaScript, Rust, and Android Java/Kotlin language services for Asterlyn.
 The host owns permissions, processes, document synchronization and editor UI. This plugin owns language
-profiles, pinned server assets and model adapters. It requires Asterlyn **0.1.24 or newer** and the
+profiles, pinned server assets and model adapters. It requires Asterlyn **0.1.25 or newer** and the
 Android Gradle plugin **0.6.3 or newer**. Groovy/Gradle DSL semantic support remains deferred.
 
 Install the `.asterlyn-plugin.tgz` from [Releases](https://github.com/guozhiqiang123/asterlyn-plugin-lsp/releases)

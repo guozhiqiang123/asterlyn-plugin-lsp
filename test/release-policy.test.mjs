@@ -7,5 +7,5 @@ test('release identity and independent SDK provenance are mandatory',()=>{
 });
 test('development bytes, draft and prerelease metadata cannot impersonate a published SDK',()=>{
  const release={tagName:policy.host.tag,isDraft:false,isPrerelease:false};assert.doesNotThrow(()=>verifyPublishedSdk(policy,release,policy.host.sdkSha256));
- for(const patch of [{isDraft:true},{isPrerelease:true},{tagName:'v0.1.20'}])assert.throws(()=>verifyPublishedSdk(policy,{...release,...patch},policy.host.sdkSha256));assert.throws(()=>verifyPublishedSdk(policy,release,'0'.repeat(64)));
+ for(const patch of [{isDraft:undefined},{isPrerelease:undefined},{isDraft:true},{isPrerelease:true},{tagName:'v0.1.20'}])assert.throws(()=>verifyPublishedSdk(policy,{...release,...patch},policy.host.sdkSha256));assert.throws(()=>verifyPublishedSdk(policy,release,'0'.repeat(64)));
 });

@@ -34,7 +34,7 @@
       "entry": "runtime/plugin.js"
     },
     "hostCompatibility": {
-      "minimum": "0.1.24",
+      "minimum": "0.1.25",
       "maximumExclusive": "0.2.0"
     },
     "license": {

@@ -13,6 +13,6 @@ SDK 1.13.0 is the exact unpublished development artifact generated in the siblin
 ## Public SDK provenance for 0.3.11
 
 Current SDK: 1.14.0; exact SHA-256 `3de0a44594d014298b4129c719b84a4544c834966e63c75a090db085fd43e761`.
-The first public plugin Release is gated on Asterlyn v0.1.24 publishing these exact bytes.
+The first public plugin Release is gated on Asterlyn v0.1.25 publishing these exact bytes.
 `release-policy.json` and CI verify the downloaded Release artifact; the older development-only
 notes above remain historical and are not publication evidence.

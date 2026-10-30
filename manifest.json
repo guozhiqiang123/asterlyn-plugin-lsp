@@ -2,7 +2,7 @@
   "schemaVersion": 3,
   "sdkMajor": 1,
   "id": "dev.asterlyn.lsp",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "nameKey": "name",
   "descriptionKey": "description",
   "localization": {
@@ -34,7 +34,7 @@
       "entry": "runtime/plugin.js"
     },
     "hostCompatibility": {
-      "minimum": "0.1.22",
+      "minimum": "0.1.23",
       "maximumExclusive": "0.2.0"
     },
     "license": {

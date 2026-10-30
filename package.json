@@ -1,6 +1,6 @@
 {
   "name": "asterlyn-plugin-lsp",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -14,7 +14,8 @@
     "package:release": "node scripts/build-release-package.mjs",
     "package:inspect": "node scripts/inspect-release-package.mjs",
     "acceptance": "node scripts/host-acceptance.mjs",
-    "verify": "npm run check && npm test && npm run package:release && npm run package:inspect"
+    "verify": "npm run release:check && npm run check && npm test && npm run package:release && npm run package:inspect",
+    "release:check": "node scripts/verify-release-policy.mjs"
   },
   "dependencies": {
     "@asterlyn/plugin-sdk": "file:vendor/asterlyn-plugin-sdk-1.14.0.tgz"

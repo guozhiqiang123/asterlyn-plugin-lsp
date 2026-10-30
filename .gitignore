@@ -4,3 +4,4 @@ release/
 vendor/.sdk-dev/
 .asterlyn-host/
 *.log
+release-components/

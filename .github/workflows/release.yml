@@ -1,0 +1,97 @@
+name: Release LSP plugin
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lsp-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - name: Read fixed host Release policy
+        id: policy
+        run: |
+          node --input-type=module - <<'JS'
+          import {appendFileSync,readFileSync} from 'node:fs';
+          const p=JSON.parse(readFileSync('release-policy.json'));
+          appendFileSync(process.env.GITHUB_OUTPUT,`host_repository=${p.host.repository}\nhost_tag=${p.host.tag}\nsdk_asset=${p.host.sdkAsset}\ndependency_repository=${p.dependency.repository}\ndependency_tag=${p.dependency.tag}\n`);
+          JS
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ steps.policy.outputs.host_repository }}
+          ref: ${{ steps.policy.outputs.host_tag }}
+          path: .asterlyn-host
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.98.1
+      - run: npm ci
+      - name: Check source, tests and canonical package admission
+        env:
+          ASTERLYN_HOST_CHECKOUT: ${{ github.workspace }}/.asterlyn-host
+        run: npm run verify
+      - name: Verify isolated native activation and cleanup
+        env:
+          ASTERLYN_HOST_CHECKOUT: ${{ github.workspace }}/.asterlyn-host
+        run: npm run acceptance && npm run acceptance -- --android
+      - name: Prove published SDK and required plugin provenance
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HOST_REPOSITORY: ${{ steps.policy.outputs.host_repository }}
+          HOST_TAG: ${{ steps.policy.outputs.host_tag }}
+          SDK_ASSET: ${{ steps.policy.outputs.sdk_asset }}
+          DEPENDENCY_REPOSITORY: ${{ steps.policy.outputs.dependency_repository }}
+          DEPENDENCY_TAG: ${{ steps.policy.outputs.dependency_tag }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$HOST_TAG" --repo "$HOST_REPOSITORY" --json tagName,isDraft,isPrerelease > "$RUNNER_TEMP/host-release.json"
+          gh release download "$HOST_TAG" --repo "$HOST_REPOSITORY" --pattern "$SDK_ASSET" --dir "$RUNNER_TEMP/host-sdk"
+          node scripts/verify-release-policy.mjs "$RELEASE_TAG" "$RUNNER_TEMP/host-sdk/$SDK_ASSET" "$RUNNER_TEMP/host-release.json"
+          test "$(gh release view "$DEPENDENCY_TAG" --repo "$DEPENDENCY_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == false)')" = true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lsp-release-package
+          path: |
+            release/*.asterlyn-plugin.tgz
+            release/release-summary.json
+            release/SHA256SUMS
+          if-no-files-found: error
+  publish:
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: lsp-release-package
+          path: release
+      - name: Publish verified immutable package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cd release
+          sha256sum --check SHA256SUMS
+          gh release create "$RELEASE_TAG" --draft --verify-tag --title "$RELEASE_TAG" --generate-notes ./*.asterlyn-plugin.tgz release-summary.json SHA256SUMS
+          gh release download "$RELEASE_TAG" --dir "$RUNNER_TEMP/roundtrip"
+          (cd "$RUNNER_TEMP/roundtrip" && sha256sum --check SHA256SUMS)
+          gh release edit "$RELEASE_TAG" --draft=false --latest

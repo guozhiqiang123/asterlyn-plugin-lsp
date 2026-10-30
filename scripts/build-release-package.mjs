@@ -24,11 +24,12 @@ await writeFile(path.join(staging, "LICENSE"), await readFile(path.join(root, "L
 
 async function copyTree(source, destination) {
   await mkdir(destination, { recursive: true });
-  for (const entry of await readdir(source, { withFileTypes: true })) {
+  for (const entry of (await readdir(source, { withFileTypes: true })).sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0)) {
     const from = path.join(source, entry.name);
     const to = path.join(destination, entry.name);
     if (entry.isDirectory()) await copyTree(from, to);
-    else await writeFile(to, await readFile(from));
+    else if(entry.isFile()) await writeFile(to, await readFile(from));
+    else throw new Error(`Unsupported source entry: ${from}`);
   }
 }
 await copyTree(path.join(root, "servers"), path.join(staging, "servers"));
@@ -38,8 +39,8 @@ await copyTree(path.join(root,"server-programs"),path.join(staging,"server-progr
 const integrity = {};
 async function collectFiles(directory, prefix = "") {
   const files = [];
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const relative = path.join(prefix, entry.name);
+  for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0)) {
+    const relative = path.posix.join(prefix, entry.name);
     if (entry.isDirectory()) files.push(...await collectFiles(path.join(directory, entry.name), relative));
     else files.push(relative);
   }
@@ -53,8 +54,11 @@ admittedManifest.distribution.integrity = integrity;
 await writeFile(path.join(staging, "manifest.json"), `${JSON.stringify(admittedManifest, null, 2)}\n`);
 const assetName = `${manifest.id}-${manifest.version}.asterlyn-plugin.tgz`;
 const assetPath = path.join(releaseRoot, assetName);
-await createTar({ cwd: staging, file: assetPath, gzip: true, portable: true, noMtime: true }, ["manifest.json", "LICENSE", "runtime/plugin.js", "servers", "server-programs"]);
+await createTar({ cwd: staging, file: assetPath, gzip: true, portable: true, noMtime: true }, ["manifest.json", ...Object.keys(integrity).sort()]);
 const asset = await readFile(assetPath);
 await writeFile(path.join(releaseRoot, "release-summary.json"), `${JSON.stringify({ asset: assetName, version: manifest.version, bytes: asset.byteLength, sha256: createHash("sha256").update(asset).digest("hex"), files: integrity }, null, 2)}\n`);
 await rm(staging, { recursive: true, force: true });
 process.stdout.write(`${JSON.stringify({ asset: assetName, bytes: asset.byteLength })}\n`);
+
+const summaryBytes=await readFile(path.join(releaseRoot,"release-summary.json"));
+await writeFile(path.join(releaseRoot,"SHA256SUMS"),`${createHash("sha256").update(asset).digest("hex")}  ${assetName}\n${createHash("sha256").update(summaryBytes).digest("hex")}  release-summary.json\n`);

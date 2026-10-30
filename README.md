@@ -1,24 +1,33 @@
 # Asterlyn LSP plugin
 
-Independent first-party TypeScript/JavaScript language-service plugin for Asterlyn.
+Independent optional TypeScript/JavaScript, Rust, and Android Java/Kotlin language services for Asterlyn.
+The host owns permissions, processes, document synchronization and editor UI. This plugin owns language
+profiles, pinned server assets and model adapters. It requires Asterlyn **0.1.23 or newer** and the
+Android Gradle plugin **0.6.3 or newer**. Groovy/Gradle DSL semantic support remains deferred.
 
-Implementation starts only after the [plan](docs/implementation-plan.md) is committed. The host owns
-LSP transport, current editor documents, permissions, processes and presentation. This repository
-owns the language declaration, pinned server assets, localization and deterministic plugin package.
+Install the `.asterlyn-plugin.tgz` from [Releases](https://github.com/guozhiqiang123/asterlyn-plugin-lsp/releases)
+through Asterlyn's plugin manager. Android services additionally require explicitly installed,
+checksum-verified JDT/Kotlin components, JDK 25 and a Kotlin JDK 17-24. TypeScript uses trusted local
+Node.js; Rust uses installed rust-analyzer/rust-src. Project dependencies are never silently installed.
 
-Initial identity: `dev.asterlyn.lsp`, plugin version `0.1.0`, package schema `3`.
-Repository metadata: `guozhiqiang123/asterlyn-plugin-lsp` (local repository only; not published).
+## Development and release
 
-Rust support is planned in [the Rust provider plan](docs/rust-support-plan.md), coordinated with the
-sibling host's Rust compatibility plan. The current 0.1.0 package remains TS/JS-only; this planning
-step does not install components or change its SDK, runtime, manifest or server assets.
+```
+npm ci
+ASTERLYN_HOST_CHECKOUT=/path/to/asterlyn npm run verify
+ASTERLYN_HOST_CHECKOUT=/path/to/asterlyn npm run acceptance
+```
 
-## Rust development preview (0.2.0)
+The host checkout is a validation tool, never a plugin source or SDK dependency. CI checks out the
+fixed host tag in `release-policy.json`. The SDK is the exact vendored canonical artifact; a tag
+Release requires byte-for-byte proof from the published host Release and the required Android plugin
+Release. Tag/package/manifest versions must agree. See [publication plan](docs/public-release-plan.md).
 
-Requires host 0.1.21 / SDK 1.12.0 and preinstalled Rustup 1.98.1 components `rust-analyzer` and
-`rust-src`. No automatic tool/dependency downloads. Open a Cargo workspace and an editable `.rs`
-file, approve Rust separately from TypeScript, then Ctrl-click (or Command-click on macOS) a symbol.
-In-workspace definition/reference navigation, hover, basic completion and native diagnostics are
-the first scope. Build scripts/procedural macros/check-on-save remain disabled, so generated-code
-analysis is partial. External standard-library/dependency source navigation is a later host gate.
-This SDK/plugin preview is not a published Release.
+`package:release` rejects symlinks and writes a deterministic archive, recursive integrity table,
+release summary and SHA256SUMS. `package:inspect` always invokes the canonical Rust admission validator;
+`acceptance` additionally exercises the isolated plugin helper. The tag workflow uploads the tested
+artifact once, round-trips checksums in a draft Release, then publishes it. It never overwrites assets.
+
+Android tool components are separate optional archives, outside the lightweight plugin package;
+source versions, licenses, digests, rebuilding and explicit installation are documented in
+[component distribution](docs/component-distribution.md), [component records](docs/kotlin-language-component.md) and [compiler records](docs/kotlin-compiler-2.3.21.md).

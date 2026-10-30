@@ -11,3 +11,11 @@ User authorization covers commits, host version/tag/push, Actions monitoring, an
 | R4 | Delivery audit | Independently verify remote commit/tag, Actions and Release asset digests; record URLs and limits |
 
 Publish the host through GitRepository preview/ordinary Push, without rewriting remote history. Publish LSP only after the compatible host SDK Release succeeds. Development SDK bytes are not evidence of a published artifact. Freeze existing Kotlin/JDT component archives by manifest digests; distribute only verified archives, retaining source/license records and reusable verification scripts.
+
+## Local release acceptance
+
+Plugin 0.3.11, host baseline 0.1.23, SDK 1.14.0. Type check and 24 unit tests pass; repeated
+packaging produced identical SHA-256 `ea701c177e50323acac548e9c46c9506f3476e414b44cac595f2a9be5e6e43a0`
+for 4,663,863 bytes. Canonical native admission and isolated TS/Rust plus Android descriptor activation
+pass. Components are staged only from the three exact manifest digests, distributed separately.
+The tag Release remains blocked until host SDK and Android dependency Releases are published.

@@ -31,7 +31,7 @@ export const LSP_PLUGIN_MANIFEST: SdkInstallablePluginPackageManifest = Object.f
   schemaVersion: 3,
   sdkMajor: 1,
   id: LSP_PLUGIN_ID,
-  version: "0.3.10",
+  version: "0.3.11",
   nameKey: "name",
   descriptionKey: "description",
   localization: Object.freeze({
@@ -55,7 +55,7 @@ export const LSP_PLUGIN_MANIFEST: SdkInstallablePluginPackageManifest = Object.f
   distribution: Object.freeze({
     repository: "guozhiqiang123/asterlyn-plugin-lsp",
     runtime: Object.freeze({ protocol: 1, entry: "runtime/plugin.js" }),
-    hostCompatibility: Object.freeze({ minimum: "0.1.22", maximumExclusive: "0.2.0" }),
+    hostCompatibility: Object.freeze({ minimum: "0.1.23", maximumExclusive: "0.2.0" }),
     license: Object.freeze({ expression: "MIT", file: "LICENSE" }),
     integrity: Object.freeze({}),
   }),

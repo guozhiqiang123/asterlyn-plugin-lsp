@@ -1,3 +1,4 @@
+import {moduleGraph} from "./android-module-graph.mjs";
 import {cp, lstat, mkdir, readFile, readdir, rm, stat} from "node:fs/promises";
 import {join, resolve, sep} from "node:path";
 import {fileURLToPath, pathToFileURL} from "node:url";
@@ -27,16 +28,7 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
   // The compiler bridge carries its own pinned runtime closure; do not mix server/compiler JARs.
   for (const file of await readdir(compilerRoot)) if (file.endsWith(".jar") && !file.startsWith("kotlin-compiler-embeddable-") && !file.startsWith("kotlin-annotation-processing-embeddable-")) runtimeJars.push(join(compilerRoot, file));
   const byId = new Map(model.modules.map(module => [module.module, module]));
-  const closure = id => {
-    const seen = new Set(), result = [];
-    const visit = id => {
-      if (seen.has(id)) return;
-      const module = byId.get(id); if (!module) throw Error("android-module-dependency-missing");
-      seen.add(id); result.push(module);
-      for (const dep of module.projectDependencies ?? []) visit(typeof dep === "string" ? dep : dep.module);
-    };
-    visit(id); return result;
-  };
+  const graph=moduleGraph(model.modules),closure=id=>graph.closure(id);
   const moduleFor = value => {
     const file = pathOf(value);
     const matches = model.modules.flatMap(module => [...module.sources, ...(module.generatedSources ?? [])].filter(root => inside(root, file)).map(root => ({id: module.module, length: root.length})));
@@ -46,13 +38,19 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
   const docEntries = () => documents instanceof Map ? [...documents.entries()] : Object.entries(documents);
   const docsFor = id => new Map(docEntries().filter(([key]) => includes(id, key)).map(([key, value]) => [key, {...value}]));
   let latest = null, kaptPromise = null, revision = 0, builtRevision = -1, debounce = null;
-  const stableRoots = new Map(), entries = new Map();
+  const stableRoots = new Map(), entries = new Map(), publishedKeys = new Map();
+  const dirtyModules = new Set(byId.keys());
+  const markDirty = file => {
+    const owner = moduleFor(file);
+    for (const id of byId.keys()) if (!owner || closure(id).some(module => module.module === owner)) dirtyModules.add(id);
+  };
   for (const id of byId.keys()) {
     const root = join(sessionRoot, `module-${moduleHash(id)}`, "stubs");
     await mkdir(root, {recursive: true}); stableRoots.set(id, root);
   }
   const copyStable = async generated => {
-    for (const result of generated.perModuleRoots) {
+    const changed = generated.perModuleRoots.filter(result => publishedKeys.get(result.module) !== result.key);
+    for (const result of changed) {
       const root = stableRoots.get(result.module);
       await rm(root, {recursive: true, force: true}); await mkdir(root, {recursive: true});
       for (const metadata of result.metadata) {
@@ -61,13 +59,16 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
         await mkdir(join(target, ".."), {recursive: true}); await cp(stub, target);
       }
     }
-    await onChanged?.(generated.perModuleRoots.flatMap(result => result.metadata.map(metadata => ({uri: uri(join(stableRoots.get(result.module), metadata.slice(result.stubRoot.length + 1).replace(/\.kapt_metadata$/u, ".java"))), type: 1}))));
+    for (const result of changed) publishedKeys.set(result.module, result.key);
+    if(changed.length)await onChanged?.(changed.flatMap(result => result.metadata.map(metadata => ({uri: uri(join(stableRoots.get(result.module), metadata.slice(result.stubRoot.length + 1).replace(/\.kapt_metadata$/u, ".java"))), type: 1}))));
   };
-  const regenerate = async () => {
+  const regenerate = async target => {
     const started=performance.now();trace("kotlin-abi-started",{backend:"compiler"});
-    const generated = await generateKaptStubs({model, stateDirectory: sessionRoot, java, compilerJar, kaptJar, runtimeJars, overlays: new Map(docEntries().map(([key, value]) => [key, {...value}])), signal: abort.signal,onProgress});
+    const generated = await generateKaptStubs({model, stateDirectory: sessionRoot, java, compilerJar, kaptJar, runtimeJars, overlays: new Map(docEntries().map(([key, value]) => [key, {...value}])), signal: abort.signal,onProgress,cacheDirectory:options.cacheDirectory,onCacheEvent:event=>{const {code,...details}=event;trace(code,details);},previous:latest,concurrency:2});
     trace("kotlin-abi-completed",{backend:"compiler",durationMs:Math.round(performance.now()-started),completed:generated.perModuleRoots.length});
+    if (target !== revision) {await rm(generated.root,{recursive:true,force:true});return null;}
     try {await copyStable(generated);} catch (error) {await rm(generated.root, {recursive: true, force: true}); throw error;}
+    if (target !== revision) {await rm(generated.root,{recursive:true,force:true});return null;}
     const previous = latest; latest = generated;
     if (previous) await rm(previous.root, {recursive: true, force: true});
     return generated;
@@ -77,7 +78,7 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
     if (builtRevision === revision && latest) return latest;
     if (!kaptPromise) {
       const target = revision;
-      kaptPromise = regenerate().then(result => {builtRevision = target; if (builtRevision === revision) onJavaAbiReady(); return result;}).finally(() => {kaptPromise = null;});
+      kaptPromise = regenerate(target).then(result => {if(result){builtRevision = target;if(builtRevision===revision){dirtyModules.clear();onJavaAbiReady();}}return result;}).finally(() => {kaptPromise = null;});
     }
     await kaptPromise;
     return builtRevision === revision ? latest : ensureAbi();
@@ -148,7 +149,7 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
       && latest.sourceDigests.get(uri(pathOf(file))) === createHash("sha256").update(String(value?.text ?? "")).digest("hex");
     const changed = previous ? previous.text !== value?.text : !matchesImportedInput;
     if (documents instanceof Map) documents.set(file, {...value}); else documents[file] = {...value};
-    if (changed) revision++;
+    if (changed) {revision++; markDirty(file);}
     for (const entry of entries.values()) if (entry.service && !entry.starting && includes(entry.id, file)) await entry.service.applyOverlay(file, value);
     if (changed) scheduleAbi();
   };
@@ -158,21 +159,27 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
     let changed = true;
     try {const path = pathOf(file), info = await lstat(path); if (info.isFile() && !info.isSymbolicLink() && info.size <= 2 * 1024 * 1024) changed = await readFile(path, "utf8") !== previous.text;} catch {}
     if (documents instanceof Map) documents.delete(file); else delete documents[file];
-    if (changed) revision++;
+    if (changed) {revision++; markDirty(file);}
     for (const entry of entries.values()) if (entry.service && !entry.starting && includes(entry.id, file)) await entry.service.closeOverlay(file);
     if (changed) scheduleAbi();
+    else await latest?.persistSaved?.();
   };
   const refreshSources = async () => {
+    await latest?.persistSaved?.();
     let changes = 0;
-    for (const entry of entries.values()) if (entry.service && !entry.starting) changes += (await entry.service.refreshSources()) ?? 0;
+    for (const entry of entries.values()) if (entry.service && !entry.starting) {
+      const result = await entry.service.refreshSources();
+      changes += result?.paths?.length ?? result ?? 0;
+      for (const file of result?.paths ?? []) markDirty(file);
+    }
     if (changes) {revision++; scheduleAbi();}
     return changes;
   };
-  const request = async (method, params, timeout) => {
+  const request = async (method, params, timeout, signal) => {
     const service = await startIfNeeded(params.textDocument.uri); if (!service) return null;
     const entry = entries.get(moduleFor(params.textDocument.uri)); if (!entry || entry.service !== service) throw Error("kotlin-session-changed");
     entry.refs++; entry.lastUsed = Date.now();
-    try {return await service.peer.request(method, params, timeout);} finally {entry.refs--; entry.lastUsed = Date.now();}
+    try {return await service.peer.request(method, params, timeout, signal);} finally {entry.refs--; entry.lastUsed = Date.now();}
   };
   const documentDiagnostics = async file => {
     const service = await startIfNeeded(file), entry = entries.get(moduleFor(file));
@@ -189,11 +196,39 @@ export async function prepareAndroidKotlin({model, stateDirectory, options, docu
     const result = latest.perModuleRoots.find(result => result.module === id);
     return result ? latest.mapOriginByKey(uri(join(result.stubRoot, file.slice(stable.length + 1))), response.key) : null;
   };
+  const references = async (location,signal) => {
+    const owner=moduleFor(location.uri);if(!owner)throw Error("android-reference-outside-model");
+    const roots=graph.referenceRoots(owner);if(roots.length>16)throw Error("android-reference-coverage-bound");
+    const result=[];
+    for(const id of roots) {
+      if(abort.signal.aborted)throw Error("android-language-session-ended");if(signal?.aborted)throw Object.assign(Error("language-request-cancelled"),{code:-32800});
+      const service=await startModule(id),entry=entries.get(id);if(!entry||entry.service!==service)throw Error("kotlin-session-changed");
+      entry.refs++;
+      try {
+        const value=await service.peer.request("kotlin/asterlynReferences",{uri:location.uri,line:location.range.start.line,character:location.range.start.character},25000,signal);
+        if(!Array.isArray(value))throw Error("kotlin-reference-result-invalid");
+        for(const item of value)if(graph.canReference(moduleFor(item.uri),owner))result.push(item);
+      }finally{entry.refs--;entry.lastUsed=Date.now();}
+    }
+    return result;
+  };
+  const javaDeclarations = async(location,jdtPeer,signal)=>{
+    if(!latest)return [];
+    const result=[];
+    for(const anchor of latest.javaDeclarations(location.uri,location.range.start)){
+      const id=latest.perModuleRoots.find(item=>inside(item.stubRoot,anchor.stub))?.module;
+      if(!id)continue;
+      const stable=uri(join(stableRoots.get(id),anchor.stub.slice(latest.perModuleRoots.find(item=>item.module===id).stubRoot.length+1)));
+      const value=await jdtPeer.request("workspace/executeCommand",{command:"asterlyn.java.declarationLocation",arguments:[{uri:stable,key:anchor.key}]},25000,signal);
+      if(value)result.push(value);
+    }
+    return result;
+  };
   const close = async () => {
     abort.abort(); clearTimeout(debounce);
     await Promise.all([...entries.values()].map(closeEntry));
     await kaptPromise?.catch(() => {}); await rm(sessionRoot, {recursive: true, force: true});
   };
   const readDependencySource = (target, document) => entries.get(moduleFor(document))?.service?.readDependencySource(target) ?? null;
-  return {extraSources: stableRoots, startIfNeeded,warmProject,readyFor,backendPending:()=>[...entries.values()].some(entry=>entry.starting), documentDiagnostics, readDependencySource, applyOverlay, closeOverlay, refreshSources, awaitJavaAbi: ensureAbi, javaAbiCurrent: () => builtRevision === revision && latest !== null, request, mapJavaDefinition, close};
+  return {moduleFor,references,javaDeclarations,extraSources: stableRoots, startIfNeeded,warmProject,readyFor,backendPending:()=>[...entries.values()].some(entry=>entry.starting), documentDiagnostics, readDependencySource, applyOverlay, closeOverlay, refreshSources, awaitJavaAbi: ensureAbi, javaAbiCurrent: file => latest !== null && (file ? !dirtyModules.has(moduleFor(file)) : builtRevision === revision), request, mapJavaDefinition, close};
 }

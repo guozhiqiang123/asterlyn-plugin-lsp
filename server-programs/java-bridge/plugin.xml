@@ -4,6 +4,7 @@
     <delegateCommandHandler class="dev.asterlyn.lsp.WorkingCopyDiagnostics">
       <command id="asterlyn.java.documentDiagnostics" static="true"/>
       <command id="asterlyn.java.declarationKey" static="true"/>
+      <command id="asterlyn.java.declarationLocation" static="true"/>
       <command id="asterlyn.java.refreshModel" static="true"/>
     </delegateCommandHandler>
   </extension>

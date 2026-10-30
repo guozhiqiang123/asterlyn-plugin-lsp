@@ -3,10 +3,11 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { test } from "node:test";
 import path from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import {tmpdir} from "node:os";
+import {pathToFileURL} from "node:url";
 
 const root = path.resolve(import.meta.dirname, "..");
-const uri = "file:///tmp/asterlyn-lsp-fixture/main.ts";
 
 function launch() {
   const child = spawn(process.execPath, [path.join(root, "servers/typescript/server.mjs"), "--stdio"], { stdio: ["pipe", "pipe", "pipe"] });
@@ -42,13 +43,14 @@ function launch() {
   return { child, send, request, waitFor };
 }
 
-test("packaged server handles unsaved Unicode TS diagnostics and language features", async () => {
-  mkdirSync("/tmp/asterlyn-lsp-fixture", { recursive: true });
+test("packaged server handles unsaved Unicode TS diagnostics and language features", async (t) => {
+  const fixture=realpathSync(mkdtempSync(path.join(tmpdir(),"asterlyn-ts-lsp-"))),uri=pathToFileURL(path.join(fixture,"main.ts")).href;
   const server = launch();
+  t.after(async()=>{server.child.stdin.end();if(server.child.exitCode===null){await Promise.race([once(server.child,"exit"),new Promise(resolve=>setTimeout(resolve,1000))]);if(server.child.exitCode===null)server.child.kill("SIGTERM");}rmSync(fixture,{recursive:true,force:true});});
   const tsserverPath = path.join(root, "servers/typescript/typescript/lib/tsserver.js");
   server.request(1, "initialize", {
     processId: null,
-    rootUri: "file:///tmp/asterlyn-lsp-fixture",
+    rootUri: pathToFileURL(fixture).href,
     capabilities: { textDocument: { publishDiagnostics: {}, hover: { contentFormat: ["plaintext"] }, definition: {}, completion: {} } },
     initializationOptions: { tsserver: { path: tsserverPath } },
   });
@@ -58,7 +60,7 @@ test("packaged server handles unsaved Unicode TS diagnostics and language featur
   server.send({ jsonrpc: "2.0", method: "textDocument/didOpen", params: {
     textDocument: { uri, languageId: "typescript", version: 1, text: "const π = 1;\r\nconst broken: string = 123;\r\nbroken;\r\n" },
   } });
-  const diagnostics = await server.waitFor((message) => message.method === "textDocument/publishDiagnostics");
+  const diagnostics = await server.waitFor((message) => message.method === "textDocument/publishDiagnostics" && message.params.uri === uri && message.params.diagnostics.some(diagnostic=>diagnostic.code===2322));
   assert.ok(diagnostics.params.diagnostics.length > 0);
   server.request(2, "textDocument/hover", { textDocument: { uri }, position: { line: 0, character: 7 } });
   const hover = await server.waitFor((message) => message.id === 2);

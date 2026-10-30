@@ -67,7 +67,7 @@ async function copySources(sourceRoot, destination, mappings, counter) {
         mappings.originalToPrivate.set(original.toLowerCase(), privatePath);
         mappings.privateToOriginal.set(privatePath, original);
         mappings.privateToOriginal.set(privatePath.toLowerCase(), original);
-        mappings.fileStats.set(original, {size: metadata.size, mtimeMs: metadata.mtimeMs});
+        mappings.fileStats.set(original, {size: metadata.size, mtimeMs: metadata.mtimeMs, ctimeMs: metadata.ctimeMs});
       }
     }
   };
@@ -192,8 +192,8 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     return params;
   };
   const peer = {
-    request: (method, params, timeout) => upstream.request(method, map.input(params), timeout)
-      .then(result => map.output(method === "textDocument/references" ? ownedKotlinReferences(result, mappings.privateToOriginal) : result)),
+    request: (method, params, timeout, signal) => upstream.request(method, map.input(params), timeout, signal)
+      .then(result => map.output(["textDocument/references","kotlin/asterlynReferences"].includes(method) ? ownedKotlinReferences(result, mappings.privateToOriginal) : result)),
     notify: (method, params) => upstream.notify(method, map.input(params)),
     reply: (id, result) => upstream.reply(id, map.input(result)),
     reject: (...args) => upstream.reject(...args),
@@ -303,28 +303,41 @@ export async function startKotlin({ model, stateDirectory, java, component, over
     }
   };
   const refreshSources = async () => {
-    const changes = [];
+    const changes = [], affected = new Set();
+    let inventoryEntries=0;
+    const discover=async(root,depth=0)=>{
+      if(depth>64||++inventoryEntries>MAX_DIRECTORY_ENTRIES)throw Error("kotlin-source-entry-bound");
+      for(const entry of await readdir(root,{withFileTypes:true}).catch(error=>{if(error.code==="ENOENT")return [];throw error;})) {
+        if(++inventoryEntries>MAX_DIRECTORY_ENTRIES)throw Error("kotlin-source-entry-bound");
+        const file=join(root,entry.name);
+        if(entry.isDirectory())await discover(file,depth+1);
+        else if(entry.isFile()&&SOURCE_EXTENSIONS.has(extname(entry.name))&&!mappings.originalToPrivate.has(file)&&!mappings.originalToPrivate.has(file.toLowerCase())) {
+          const target=await mappedPrivatePath(uriFor(file));if(target){changes.push({uri:uriFor(target),type:1});affected.add(uriFor(file));}
+        }
+      }
+    };
+    for(const root of new Set(sourceViews.map(view=>view.sourceRoot)))await discover(root);
     const seen = new Set();
     for (const [originalPath, privatePath] of mappings.originalToPrivate) {
       if (seen.has(privatePath) || overlayState.has(privatePath)) continue;
       seen.add(privatePath);
       const metadata = await lstat(originalPath).catch(() => null), previous = mappings.fileStats.get(originalPath);
-      if (!metadata) {await rm(privatePath,{force:true}); changes.push({uri:uriFor(privatePath),type:3}); mappings.fileStats.delete(originalPath); mappings.originalToPrivate.delete(originalPath); mappings.originalToPrivate.delete(originalPath.toLowerCase()); mappings.privateToOriginal.delete(privatePath); mappings.privateToOriginal.delete(privatePath.toLowerCase()); continue;}
+      if (!metadata) {affected.add(uriFor(originalPath));await rm(privatePath,{force:true}); changes.push({uri:uriFor(privatePath),type:3}); mappings.fileStats.delete(originalPath); mappings.originalToPrivate.delete(originalPath); mappings.originalToPrivate.delete(originalPath.toLowerCase()); mappings.privateToOriginal.delete(privatePath); mappings.privateToOriginal.delete(privatePath.toLowerCase()); continue;}
       if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > MAX_SOURCE_FILE_BYTES) throw Error("kotlin-source-size-bound");
-      if (previous?.size === metadata.size && previous.mtimeMs === metadata.mtimeMs) continue;
+      if (previous?.size === metadata.size && previous.mtimeMs === metadata.mtimeMs && previous.ctimeMs === metadata.ctimeMs) continue;
       counter.bytes += metadata.size - (previous?.size ?? 0); if(counter.bytes > MAX_SOURCE_BYTES) throw Error("kotlin-source-size-bound");
       const text = await readFile(originalPath, "utf8");
-      mappings.fileStats.set(originalPath,{size:metadata.size,mtimeMs:metadata.mtimeMs});
+      mappings.fileStats.set(originalPath,{size:metadata.size,mtimeMs:metadata.mtimeMs,ctimeMs:metadata.ctimeMs});
       // Saving an overlay can change mtime while leaving the already-current shadow unchanged.
       if (await readFile(privatePath, "utf8").catch(() => null) === text) continue;
       await writeFile(privatePath, text);
-      changes.push({uri:uriFor(privatePath),type:2});
+      affected.add(uriFor(originalPath));changes.push({uri:uriFor(privatePath),type:2});
     }
     if (changes.length) {
       upstream.notify("workspace/didChangeWatchedFiles", { changes });
       kickKotlinRefresh();
     }
-    return changes.length;
+    return {paths:[...affected]};
   };
   // didOpen can publish immediately. Subscribe/cache before initial overlays, rather than losing
   // the first versioned report while the caller is still awaiting creation of this session.

@@ -244,7 +244,7 @@ with tempfile.TemporaryDirectory(prefix="build-", dir=work) as temporary:
     notice = {
         "schema": 1,
         "componentId": "kotlin-language-server-asterlyn",
-        "componentVersion": "1.3.13-asterlyn.2.3.21.2",
+        "componentVersion": "1.3.13-asterlyn.2.3.21.3",
         "source": {"repository": receipt.get("sourceRepository"), "commit": PINNED_COMMIT, "patchSha256": patch_digest},
         "dependencies": [{key: value for key, value in dependency.items() if key not in {"path", "licensePath"}} for dependency in dependencies],
         "runtimeJars": runtime,

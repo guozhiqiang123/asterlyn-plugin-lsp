@@ -25,7 +25,7 @@ export class RpcPeer extends EventEmitter {
       if (typeof message.method === "string") this.emit(message.id === undefined ? "notification" : "request", message);
       else {
         const pending = this.#pending.get(message.id); if (!pending) continue;
-        this.#pending.delete(message.id); clearTimeout(pending.timer);
+        this.#pending.delete(message.id); clearTimeout(pending.timer); pending.cleanup?.();
         if (message.error) pending.reject(Object.assign(new Error(pending.method==="asterlyn/workspaceModel"&&typeof message.error.message==="string"&&/^[a-z][a-z0-9.-]{0,79}$/u.test(message.error.message)?message.error.message:"language-request-rejected"), {code: message.error.code})); else pending.resolve(message.result);
       }
     }
@@ -38,13 +38,18 @@ export class RpcPeer extends EventEmitter {
   notify(method, params) { this.send({jsonrpc: "2.0", method, params}); }
   reply(id, result) { this.send({jsonrpc: "2.0", id, result}); }
   reject(id, code = -32603, message = "Language operation failed.") { this.send({jsonrpc: "2.0", id, error: {code, message}}); }
-  request(method, params, timeout = 30000) {
+  request(method, params, timeout = 30000, signal) {
+    if (signal?.aborted) return Promise.reject(Object.assign(Error("language-request-cancelled"),{code:-32800}));
     if (this.#pending.size >= 64) return Promise.reject(new Error("language-request-bound"));
     const id = ++this.#sequence;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.#pending.delete(id); this.notify("$/cancelRequest", {id}); reject(new Error("language-request-timeout")); }, timeout);
-      this.#pending.set(id, {resolve, reject, timer,method}); this.send({jsonrpc: "2.0", id, method, params});
+    return new Promise((resolve,reject)=>{
+      const cleanup=()=>signal?.removeEventListener("abort",cancel);
+      const finish=error=>{if(!this.#pending.delete(id))return;clearTimeout(timer);cleanup();try{this.notify("$/cancelRequest",{id});}catch{}reject(error);};
+      const cancel=()=>finish(Object.assign(Error("language-request-cancelled"),{code:-32800}));
+      const timer=setTimeout(()=>finish(Error("language-request-timeout")),timeout);
+      this.#pending.set(id,{resolve,reject,timer,method,cleanup});signal?.addEventListener("abort",cancel,{once:true});
+      try{this.send({jsonrpc:"2.0",id,method,params});}catch(error){this.#pending.delete(id);clearTimeout(timer);cleanup();reject(error);}
     });
   }
-  close() { for (const value of this.#pending.values()) {clearTimeout(value.timer); value.reject(new Error("language-peer-closed"));} this.#pending.clear(); }
+  close() { for (const value of this.#pending.values()) {clearTimeout(value.timer); value.cleanup?.(); value.reject(new Error("language-peer-closed"));} this.#pending.clear(); }
 }

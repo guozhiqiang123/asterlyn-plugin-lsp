@@ -76,3 +76,16 @@ acceptance remain separate gates.
 Receipt negative checks are part of the builder gate: replacing a runtime
 basename, changing a runtime byte, omitting a runtime entry, changing a Maven
 URL/coordinate, or changing a license file aborts before archive creation.
+
+
+## 2026-10-30 incremental/reference component .3
+
+`1.3.13-asterlyn.2.3.21.3` adds `kotlin/asterlynReferences` over exact source declaration locations.
+Java candidates are confirmed using compiler descriptors and PSI declaration name ranges; operator
+calls use resolved call descriptors. New workspace files remain workspace sources, fixing upstream
+watch-created files being hidden as temporary sources. The pinned commit and 39 runtime JARs are
+unchanged; the committed dependency lock now binds the new patch digest.
+
+Build archive SHA-256: `b116ba91ee10f3e3be08781e4f08fe3c3ae5432ced42a80fb03b5cacf29e7634`.
+Admitted inventory digest: `46ea863b9182505825b3ddfd343b12693a77a3a996fd7b740cd560ae6e6a798c`.
+This remains an explicitly installed component; activation does not download tools.

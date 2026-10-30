@@ -24,6 +24,7 @@ public final class WorkingCopyDiagnostics implements IDelegateCommandHandler {
             org.eclipse.core.resources.ResourcesPlugin.getWorkspace().getRoot().refreshLocal(org.eclipse.core.resources.IResource.DEPTH_INFINITE, monitor);
             return null;
         }
+        if ("asterlyn.java.declarationLocation".equals(command)) return DeclarationKey.locate(arguments, monitor);
         if ("asterlyn.java.declarationKey".equals(command)) return DeclarationKey.execute(arguments, monitor);
         if (!"asterlyn.java.documentDiagnostics".equals(command) || arguments.size() != 1
                 || !(arguments.get(0) instanceof Map<?, ?> request)

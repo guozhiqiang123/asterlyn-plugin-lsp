@@ -64,45 +64,6 @@ index e8da0ff..494efd5 100644
  
          val serverInfo = ServerInfo("Kotlin Language Server", VERSION)
  
-diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
-index 76428a5..dbe70e5 100644
---- a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
-+++ b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
-@@ -12,7 +12,8 @@ import java.nio.file.Paths
- class KotlinProtocolExtensionService(
-     private val uriContentProvider: URIContentProvider,
-     private val cp: CompilerClassPath,
--    private val sp: SourcePath
-+    private val sp: SourcePath,
-+    private val textDocuments: KotlinTextDocumentService
- ) : KotlinProtocolExtensions {
-     private val async = AsyncExecutor()
- 
-@@ -49,4 +50,11 @@ class KotlinProtocolExtensionService(
- 
-         listOverridableMembers(compiledFile, cursorOffset)
-     }
-+
-+    override fun asterlynDocumentDiagnostics(request: Map<String, Any?>): CompletableFuture<Map<String, Any?>> = async.compute {
-+        val uri = request["uri"] as? String ?: throw IllegalArgumentException("uri is required")
-+        val version = (request["version"] as? Number)?.toInt() ?: throw IllegalArgumentException("version is required")
-+        val digest = request["digest"] as? String ?: throw IllegalArgumentException("digest is required")
-+        textDocuments.documentDiagnostics(uri, version, digest)
-+    }
- }
-diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
-index b29c4b2..3db4c22 100644
---- a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
-+++ b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
-@@ -18,4 +18,8 @@ interface KotlinProtocolExtensions {
- 
-     @JsonRequest
-     fun overrideMember(position: TextDocumentPositionParams): CompletableFuture<List<CodeAction>>
-+
-+    /** Version/digest-bound diagnostics pull for the host adapter. */
-+    @JsonRequest
-+    fun asterlynDocumentDiagnostics(request: Map<String, Any?>): CompletableFuture<Map<String, Any?>>
- }
 diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinTextDocumentService.kt b/server/src/main/kotlin/org/javacs/kt/KotlinTextDocumentService.kt
 index 2ec1e52..dc7c2f6 100644
 --- a/server/src/main/kotlin/org/javacs/kt/KotlinTextDocumentService.kt
@@ -203,29 +164,6 @@ index 2ec1e52..dc7c2f6 100644
      }
  
      private fun shutdownExecutors(awaitTermination: Boolean) {
-diff --git a/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt b/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt
-index d7bb849..3477769 100644
---- a/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt
-+++ b/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt
-@@ -23,6 +23,9 @@ import java.nio.file.Paths
- 
- private class SourceVersion(val content: String, val version: Int, val language: Language?, val isTemporary: Boolean)
- 
-+/** Immutable text/version pair used to reject diagnostics computed for an older overlay. */
-+data class SourceSnapshot(val content: String, val version: Int)
-+
- /**
-  * Notify SourcePath whenever a file changes
-  */
-@@ -195,6 +198,8 @@ class SourceFiles(
- 
-     fun isOpen(uri: URI): Boolean = (uri in open)
- 
-+    fun snapshot(uri: URI): SourceSnapshot? = files[uri]?.let { SourceSnapshot(it.content, it.version) }
-+
-     fun isIncluded(uri: URI): Boolean = exclusions.isURIIncluded(uri)
- }
- 
 diff --git a/server/src/main/kotlin/org/javacs/kt/SourcePath.kt b/server/src/main/kotlin/org/javacs/kt/SourcePath.kt
 index dff7e0d..2695656 100644
 --- a/server/src/main/kotlin/org/javacs/kt/SourcePath.kt
@@ -1292,3 +1230,133 @@ index 2a0aac6..b8b43ca 100644
  
  val URI.filePath: Path? get() = runCatching { Paths.get(this) }.getOrNull()
  
+diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
+index 76428a5..df50db5 100644
+--- a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
++++ b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensionService.kt
+@@ -12,7 +12,8 @@ import java.nio.file.Paths
+ class KotlinProtocolExtensionService(
+     private val uriContentProvider: URIContentProvider,
+     private val cp: CompilerClassPath,
+-    private val sp: SourcePath
++    private val sp: SourcePath,
++    private val textDocuments: KotlinTextDocumentService
+ ) : KotlinProtocolExtensions {
+     private val async = AsyncExecutor()
+ 
+@@ -49,4 +50,17 @@ class KotlinProtocolExtensionService(
+ 
+         listOverridableMembers(compiledFile, cursorOffset)
+     }
++
++    override fun asterlynDocumentDiagnostics(request: Map<String, Any?>): CompletableFuture<Map<String, Any?>> = async.compute {
++        val uri = request["uri"] as? String ?: throw IllegalArgumentException("uri is required")
++        val version = (request["version"] as? Number)?.toInt() ?: throw IllegalArgumentException("version is required")
++        val digest = request["digest"] as? String ?: throw IllegalArgumentException("digest is required")
++        textDocuments.documentDiagnostics(uri, version, digest)
++    }
++    override fun asterlynReferences(request: Map<String, Any?>): CompletableFuture<List<Location>> = async.compute {
++        val uri = request["uri"] as? String ?: throw IllegalArgumentException("uri is required")
++        val line = (request["line"] as? Number)?.toInt() ?: throw IllegalArgumentException("line is required")
++        val character = (request["character"] as? Number)?.toInt() ?: throw IllegalArgumentException("character is required")
++        org.javacs.kt.references.findReferencesToLocation(Paths.get(parseURI(uri)), line, character, sp)
++    }
+ }
+diff --git a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
+index b29c4b2..6123dda 100644
+--- a/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
++++ b/server/src/main/kotlin/org/javacs/kt/KotlinProtocolExtensions.kt
+@@ -18,4 +18,11 @@ interface KotlinProtocolExtensions {
+ 
+     @JsonRequest
+     fun overrideMember(position: TextDocumentPositionParams): CompletableFuture<List<CodeAction>>
++
++    /** Version/digest-bound diagnostics pull for the host adapter. */
++    @JsonRequest
++    fun asterlynDocumentDiagnostics(request: Map<String, Any?>): CompletableFuture<Map<String, Any?>>
++    /** Find Kotlin usages of an exact imported Java/Kotlin declaration location. */
++    @JsonRequest
++    fun asterlynReferences(request: Map<String, Any?>): CompletableFuture<List<Location>>
+ }
+diff --git a/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt b/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt
+index d7bb849..ac5e7bd 100644
+--- a/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt
++++ b/server/src/main/kotlin/org/javacs/kt/SourceFiles.kt
+@@ -23,6 +23,9 @@ import java.nio.file.Paths
+ 
+ private class SourceVersion(val content: String, val version: Int, val language: Language?, val isTemporary: Boolean)
+ 
++/** Immutable text/version pair used to reject diagnostics computed for an older overlay. */
++data class SourceSnapshot(val content: String, val version: Int)
++
+ /**
+  * Notify SourcePath whenever a file changes
+  */
+@@ -128,7 +131,7 @@ class SourceFiles(
+ 
+     fun changedOnDisk(uri: URI) {
+         if (isSource(uri)) {
+-            files[uri] = readFromDisk(uri, files[uri]?.isTemporary ?: true)
++            files[uri] = readFromDisk(uri, files[uri]?.isTemporary ?: false)
+                 ?: throw KotlinLSException("Could not read source file '$uri' after being changed on disk")
+         }
+     }
+@@ -195,6 +198,8 @@ class SourceFiles(
+ 
+     fun isOpen(uri: URI): Boolean = (uri in open)
+ 
++    fun snapshot(uri: URI): SourceSnapshot? = files[uri]?.let { SourceSnapshot(it.content, it.version) }
++
+     fun isIncluded(uri: URI): Boolean = exclusions.isURIIncluded(uri)
+ }
+ 
+diff --git a/server/src/main/kotlin/org/javacs/kt/references/FindReferences.kt b/server/src/main/kotlin/org/javacs/kt/references/FindReferences.kt
+index ded67d5..2d62901 100644
+--- a/server/src/main/kotlin/org/javacs/kt/references/FindReferences.kt
++++ b/server/src/main/kotlin/org/javacs/kt/references/FindReferences.kt
+@@ -231,3 +231,45 @@ private fun operatorNames(name: Name): List<KtSingleValueToken> =
+                 listOfNotNull(token)
+             }
+         }
++
++/** Candidates are textual; every returned usage is confirmed by compiler descriptor/PSI identity. */
++fun findReferencesToLocation(target: Path, line: Int, character: Int, sp: SourcePath): List<Location> {
++    require(line >= 0 && character >= 0)
++    val content = java.nio.file.Files.readString(target)
++    require(content.length <= 2 * 1024 * 1024)
++    val cursor = org.javacs.kt.position.offset(content, line, character)
++    require(cursor >= 0 && cursor <= content.length)
++    if (target.toString().endsWith(".kt") || target.toString().endsWith(".kts")) return findReferences(target, cursor, sp)
++    require(target.toString().endsWith(".java"))
++    var start = cursor
++    while (start > 0 && Character.isJavaIdentifierPart(content[start - 1])) start--
++    var end = cursor
++    while (end < content.length && Character.isJavaIdentifierPart(content[end])) end++
++    val name = content.substring(start, end)
++    require(name.isNotEmpty() && name.length <= 1024)
++    val names = mutableSetOf(name)
++    for (prefix in listOf("get", "set", "is")) if (name.startsWith(prefix) && name.length > prefix.length) {
++        names.add(name.substring(prefix.length).replaceFirstChar { it.lowercase() })
++    }
++    val all = sp.all()
++    require(all.size <= 20000)
++    val operator = name in setOf("get", "set", "iterator", "next", "hasNext", "contains", "compareTo", "plus", "minus", "times", "div", "rem", "invoke")
++    val candidates = all.filter { operator || names.any(it.text::contains) }
++    val context = sp.compileFiles(candidates.map { it.toPath().toUri() })
++    fun matches(descriptor: DeclarationDescriptor): Boolean {
++        val psi = descriptor.findPsi() ?: return false
++        val file = psi.containingFile?.virtualFile ?: return false
++        if (java.nio.file.Paths.get(file.path).normalize() != target.normalize()) return false
++        val owner = psi as? com.intellij.psi.PsiNameIdentifierOwner ?: return false
++        val identifiers = mutableListOf<com.intellij.psi.PsiElement>()
++        owner.nameIdentifier?.let(identifiers::add)
++        if (psi is com.intellij.psi.PsiMethod && psi.isConstructor) psi.containingClass?.nameIdentifier?.let(identifiers::add)
++        return identifiers.any { cursor >= it.textRange.startOffset && cursor <= it.textRange.endOffset }
++    }
++    val found = mutableListOf<KtElement>()
++    for ((reference, descriptor) in context.getSliceContents(BindingContext.REFERENCE_TARGET)) if (matches(descriptor)) found.add(reference)
++    for ((_, call) in context.getSliceContents(BindingContext.RESOLVED_CALL)) if (matches(call.resultingDescriptor)) {
++        (call.call.callElement as? KtElement)?.takeUnless { it is KtCallExpression }?.let(found::add)
++    }
++    return found.mapNotNull { location(it) }.distinctBy { "${it.uri}:${it.range}" }.sortedWith(compareBy({ it.uri }, { it.range.start.line }, { it.range.start.character }))
++}

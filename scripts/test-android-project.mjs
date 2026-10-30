@@ -32,7 +32,7 @@ peer.on("notification", event => {
     summary.statuses.push({elapsedMs: Date.now() - began, ...event.params}); ready = event.params.quiescent;
     console.log(JSON.stringify({stage: "language-status", ...summary.statuses.at(-1)}));
   }
-  if (event.method === "asterlyn/trace") summary.lastTrace = event.params;
+  if (event.method === "asterlyn/trace") {summary.lastTrace = event.params;if(event.params?.code?.startsWith("kotlin-module-cache-")){summary.cache??={};const code=event.params.code;summary.cache[code]=(summary.cache[code]??0)+1;}}
   if (event.method === "textDocument/publishDiagnostics") diagnostics.push({uri: event.params.uri, version: event.params.version, count: event.params.diagnostics.length});
 });
 peer.on("request", event => {

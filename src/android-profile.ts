@@ -26,9 +26,9 @@ export const ANDROID_PROFILE = Object.freeze({
       },
       {
         "id": "kotlin-language-server-asterlyn",
-        "version": "1.3.13-asterlyn.2.3.21.2",
-        "archiveDigest": "sha256:dca2069025626c15dc97c4a83601dbbd8ecd18a90bb5854f45d9617a13c55ef0",
-        "contentDigest": "sha256:0cb71b321e42f993f63acd733a6f57eab684b88ac46a4d2ca5870598c408dcbd"
+        "version": "1.3.13-asterlyn.2.3.21.3",
+        "archiveDigest": "sha256:b116ba91ee10f3e3be08781e4f08fe3c3ae5432ced42a80fb03b5cacf29e7634",
+        "contentDigest": "sha256:46ea863b9182505825b3ddfd343b12693a77a3a996fd7b740cd560ae6e6a798c"
       },
       {
         "id": "kotlin-compiler-bridge",

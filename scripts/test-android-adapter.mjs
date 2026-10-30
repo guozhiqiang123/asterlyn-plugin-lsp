@@ -12,7 +12,7 @@ const [packageRoot, demoModel, prodModel, optionsFile, evidenceFile] = process.a
 if (!evidenceFile) throw Error("usage: test-android-adapter.mjs <extracted-package> <demo-model> <prod-model> <verified-options.json> <evidence.json>");
 const options = JSON.parse(await readFile(optionsFile));
 const state = await mkdtemp(join(tmpdir(), "asterlyn Android 中文 "));
-const summaries = {checks: {}, timing: {}, peakRssKiB: 0};
+const summaries = {checks: {}, timing: {}, peakRssKiB: 0, stateDirectory:state};
 const ownedPids = new Set();
 let modelPath = resolve(demoModel), generation = 1, readyCount = 0, stderrBytes = 0;
 const model = JSON.parse(await readFile(modelPath));
@@ -23,6 +23,12 @@ for (const file of ["app/src/main/java/com/example/fixture/JavaUse.java", "app/s
 }
 const began = Date.now(), child = spawn(process.execPath, [join(packageRoot, "server-programs/android-server.mjs")], {stdio: ["pipe", "pipe", "pipe"]});
 const peer = new RpcPeer(child.stdout, child.stdin), statuses = [], diagnosticEvents = [];
+const requestOnce=peer.request.bind(peer);
+peer.request=async(method,params,timeout=30000)=>{
+  const deadline=Date.now()+timeout;
+  for(;;){try{return await requestOnce(method,params,Math.max(1,deadline-Date.now()));}
+  catch(error){if(error.code!==-32801||Date.now()>=deadline)throw error;await new Promise(resolve=>setTimeout(resolve,100));}}
+};
 child.stderr.on("data", bytes => {stderrBytes += bytes.length;});
 peer.on("fatal", error => {summaries.protocolFailure = error.message;});
 peer.on("notification", notification => {
@@ -45,6 +51,7 @@ const position = (text, symbol, end = false) => {
 };
 const wait = async (condition, timeout = 150000) => {const until = Date.now() + timeout; while (!condition()) {if (Date.now() > until) throw Error("acceptance-timeout"); await pause(50);}};
 const semantic = async (method, name, symbol, extra = {}) => {
+  summaries.activeRequest={method,name};
   const doc = docs.get(name), started = Date.now(), deadline = started + 30000;
   for (let attempt = 0; ; attempt++) {
     try {const result = await peer.request(`textDocument/${method}`, {textDocument: {uri: doc.uri}, position: position(doc.text, symbol, method === "completion"), ...extra}, 30000); summaries.timing[`${method}-${name}`] = Date.now() - started; return result;}
@@ -157,6 +164,9 @@ try {
   summaries.checks.kotlinCrashRecovers = true;
 } catch (error) {summaries.failure = error.stack; process.exitCode = 1;}
 finally {
+  if(process.env.ASTERLYN_KEEP_TEST_STATE==="1") {
+    const fs=await import("node:fs/promises");for(const file of await fs.readdir(state,{recursive:true}).catch(()=>[]))if(file.endsWith(".metadata/.log"))await fs.writeFile("/tmp/asterlyn-incremental-jdt.log",await fs.readFile(join(state,file)));
+  }
   const stop = Date.now(); clearInterval(sampler);
   try {await peer.request("shutdown", null, 15000); peer.notify("exit", null);} catch {}
   await Promise.race([new Promise(resolve => child.once("exit", resolve)), pause(3000)]);
@@ -168,5 +178,5 @@ finally {
   peer.close(); summaries.timing.shutdownMs = Date.now() - stop; summaries.timing.totalMs = Date.now() - began;
   summaries.statuses = statuses; summaries.stderrBytes = stderrBytes;
   await writeFile(evidenceFile, `${JSON.stringify(summaries, null, 2)}\n`);
-  await rm(state, {recursive: true, force: true}); console.log(JSON.stringify(summaries));
+  if(process.env.ASTERLYN_KEEP_TEST_STATE!=="1")await rm(state, {recursive: true, force: true});else summaries.stateDirectory=state; console.log(JSON.stringify(summaries));
 }

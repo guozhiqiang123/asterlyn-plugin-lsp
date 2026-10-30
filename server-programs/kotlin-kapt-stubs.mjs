@@ -97,6 +97,7 @@ export async function generateKaptStubs({model,stateDirectory,java,compilerJar,k
     const closure=(module,seen=new Set())=>{if(seen.has(module.module))return [];seen.add(module.module);return [module,...(module.projectDependencies??[]).flatMap(dep=>{const target=byId.get(dep.module??dep);if(!target)throw Error("android-module-dependency-missing");return closure(target,seen);})];};
     let materializedBytes=0;
     const boundedWrite=async(path,text)=>{materializedBytes+=Buffer.byteLength(text);if(materializedBytes>512*1024*1024)throw Error("kapt-materialization-bound");await writeFile(path,text);};
+    const pendingSaves=new Map();
     const artifacts=new Map(),originMaps=new Map(),sourceDigests=new Map([...snapshot.files].map(([path,file])=>[uri(path),file.digest]));
     const perModuleRoots=new Array(model.modules.length);let completed=0;
     const jobs=model.modules.map((module,index)=>({module,index}));
@@ -140,6 +141,7 @@ export async function generateKaptStubs({model,stateDirectory,java,compilerJar,k
         // Never persist artifacts produced from any dirty source in this module's closure.
         check();if(cache&&!paths.some(path=>snapshot.files.get(path).dirty))await cache.write(key,payload);
       }
+      if(cache&&paths.some(path=>snapshot.files.get(path).dirty))pendingSaves.set(key,{payload,paths:paths.filter(path=>snapshot.files.get(path).dirty),moduleHash:digest(module.module).slice(0,12)});
       check();const metadata=[];
       for(const file of payload.files) {
         const stub=join(stubsRoot,...file.path.split("/"));await mkdir(join(stub,".."),{recursive:true});await boundedWrite(stub,file.text);
@@ -154,7 +156,13 @@ export async function generateKaptStubs({model,stateDirectory,java,compilerJar,k
     check();
     // External edits during compilation cannot publish a stale disk snapshot.
     for(const [path,file]of snapshot.files)if(!overlayMap.has(uri(path))&&digest(await readFile(path,"utf8"))!==file.digest)throw Error("kapt-source-changed-during-generation");
-    return {root,perModuleRoots,sourceDigests,artifacts,javaDeclarations:(sourceUri,position)=>{
+    return {root,perModuleRoots,sourceDigests,artifacts,persistSaved:async()=>{
+      for(const [key,entry]of pendingSaves){
+        check();let saved=true;
+        for(const path of entry.paths){const info=await lstat(path).catch(()=>null);if(!info?.isFile()||info.isSymbolicLink()||info.size>MAX_FILE_BYTES){saved=false;break;}const text=await readFile(path,"utf8").catch(()=>null);if(text===null||digest(text)!==snapshot.files.get(path).digest){saved=false;break;}}
+        if(saved&&await cache.write(key,entry.payload)){pendingSaves.delete(key);onCacheEvent({code:"kotlin-module-cache-saved",moduleHash:entry.moduleHash});}
+      }
+    },javaDeclarations:(sourceUri,position)=>{
       const source=asPath(sourceUri),text=snapshot.files.get(source)?.text;if(text===undefined)return [];
       const lines=text.split("\n");if(!Number.isSafeInteger(position?.line)||position.line<0||position.line>=lines.length||!Number.isSafeInteger(position.character)||position.character<0||position.character>lines[position.line].length)return [];
       const offset=lines.slice(0,position.line).reduce((sum,line)=>sum+line.length+1,0)+position.character;

@@ -17,6 +17,28 @@ final class DeclarationKey {
         int offset=start+character.intValue();if(line.intValue()<0||character.intValue()<0||offset>text.length())throw new IllegalArgumentException("invalid-declaration-position");
         IJavaElement[] selected=unit.codeSelect(offset,0);IJavaElement element=selected.length>0?selected[0]:unit.getElementAt(offset);
         if(monitor.isCanceled()||element==null)return null;
+        String key=keyOf(element);return key==null?null:Map.of("key",key);
+    }
+    /** Exact compiler-emitted JVM key, never a name-only match. */
+    static Object locate(List<Object> arguments,IProgressMonitor monitor)throws Exception {
+        if(arguments.size()!=1||!(arguments.get(0) instanceof Map<?,?> input)||!(input.get("uri") instanceof String uri)||!(input.get("key") instanceof String key)||key.length()>8192)throw new IllegalArgumentException("invalid-declaration-key");
+        ICompilationUnit unit=JDTUtils.resolveCompilationUnit(uri);if(unit==null||unit.getBuffer()==null)return null;
+        String text=unit.getBuffer().getContents();if(text.length()>2*1024*1024)throw new IllegalArgumentException("declaration-size-bound");
+        int count=0;
+        for(IType type:unit.getAllTypes()) {
+            List<IMember> members=new ArrayList<>();members.add(type);members.addAll(Arrays.asList(type.getFields()));members.addAll(Arrays.asList(type.getMethods()));
+            for(IMember member:members) {
+                if(monitor.isCanceled())return null;if(++count>20000)throw new IllegalArgumentException("declaration-count-bound");
+                String candidate;try{candidate=keyOf(member);}catch(Exception ignored){continue;}
+                if(!key.equals(candidate))continue;
+                ISourceRange range=member.getNameRange();if(range==null||range.getOffset()<0)return null;
+                int offset=range.getOffset(),line=0,start=0;for(int index=0;index<offset;index++)if(text.charAt(index)=='\n'){line++;start=index+1;}
+                return Map.of("uri",uri,"range",Map.of("start",Map.of("line",line,"character",offset-start),"end",Map.of("line",line,"character",offset-start+range.getLength())));
+            }
+        }
+        return null;
+    }
+    private static String keyOf(IJavaElement element)throws Exception {
         String key;
         if(element instanceof IMethod method){
             IType type=method.getDeclaringType();StringBuilder signature=new StringBuilder(typeName(type)).append('#').append(method.isConstructor()?"<init>":method.getElementName()).append('(');
@@ -25,7 +47,7 @@ final class DeclarationKey {
         }else if(element instanceof IField field){key=typeName(field.getDeclaringType())+"#"+field.getElementName();}
         else if(element instanceof IType type){key=typeName(type);}
         else return null;
-        return Map.of("key",key);
+        return key;
     }
     private static String typeName(IType type){return type.getFullyQualifiedName('$').replace('.','/');}
     private static String descriptor(String signature,IType owner,IMethod method)throws Exception{

@@ -3,8 +3,8 @@
   "repository": "guozhiqiang123/asterlyn-plugin-lsp",
   "host": {
     "repository": "guozhiqiang123/asterlyn",
-    "tag": "v0.1.23",
-    "version": "0.1.23",
+    "tag": "v0.1.24",
+    "version": "0.1.24",
     "sdkVersion": "1.14.0",
     "sdkAsset": "asterlyn-plugin-sdk-1.14.0.tgz",
     "sdkSha256": "3de0a44594d014298b4129c719b84a4544c834966e63c75a090db085fd43e761"

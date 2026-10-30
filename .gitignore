@@ -5,3 +5,4 @@ vendor/.sdk-dev/
 .asterlyn-host/
 *.log
 release-components/
+.component-staging-*/

@@ -1,8 +1,5 @@
-import {readFile,mkdir,copyFile,writeFile,stat} from 'node:fs/promises';import {createReadStream} from 'node:fs';import {createHash} from 'node:crypto';import {join,resolve} from 'node:path';import {fileURLToPath} from 'node:url';
+import {readFile} from 'node:fs/promises';import {join,resolve} from 'node:path';import {fileURLToPath} from 'node:url';import {stageComponents} from './component-staging.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),manifest=JSON.parse(await readFile(join(root,'manifest.json'),'utf8'));
-const expected=manifest.languageServers.flatMap(s=>s.program.components),input=new Map(process.argv.slice(2).map(value=>{const at=value.indexOf('=');if(at<1)throw Error('Use component-id=/absolute/archive.tar.gz');return[value.slice(0,at),resolve(value.slice(at+1))];}));
-if(process.argv.slice(2).length!==expected.length||input.size!==expected.length||expected.some(c=>!input.has(c.id)))throw Error('Supply each declared component exactly once; unknown or missing inputs are rejected');
-const output=join(root,'release-components');await mkdir(output,{recursive:true});const summary=[];
-for(const component of expected){const source=input.get(component.id),hash=createHash('sha256');for await(const chunk of createReadStream(source))hash.update(chunk);const digest=hash.digest('hex');if(`sha256:${digest}`!==component.archiveDigest)throw Error(`Component archive differs from frozen manifest: ${component.id}`);const asset=`${component.id}-${component.version}.tar.gz`;await copyFile(source,join(output,asset));summary.push({...component,asset,bytes:(await stat(source)).size});}
-await writeFile(join(output,'components.json'),JSON.stringify({schemaVersion:1,release:'analysis-components-2026-10-30',components:summary},null,2)+'\n');
-await writeFile(join(output,'SHA256SUMS'),summary.map(c=>`${c.archiveDigest.slice(7)}  ${c.asset}\n`).join(''));console.log(JSON.stringify({staged:summary.map(c=>({id:c.id,bytes:c.bytes})),hashesVerified:true}));
+const expected=manifest.languageServers.flatMap(s=>s.program.components),args=process.argv.slice(2),input=new Map(args.map(value=>{const at=value.indexOf('=');if(at<1)throw Error('Use component-id=/absolute/archive.tar.gz');return[value.slice(0,at),resolve(value.slice(at+1))];}));
+if(args.length!==expected.length)throw Error('Supply each declared component exactly once');
+const summary=await stageComponents(expected,input,join(root,'release-components'));console.log(JSON.stringify({staged:summary.map(c=>({id:c.id,bytes:c.bytes})),hashesVerified:true}));

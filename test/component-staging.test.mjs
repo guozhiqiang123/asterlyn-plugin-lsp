@@ -1,0 +1,8 @@
+import assert from 'node:assert/strict';import test from 'node:test';import {mkdtemp,mkdir,writeFile,readFile,readdir,rm} from 'node:fs/promises';import {join} from 'node:path';import {tmpdir} from 'node:os';import {createHash} from 'node:crypto';import {stageComponents} from '../scripts/component-staging.mjs';
+test('component staging validates all inputs before replacing output and removes obsolete generated assets',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'lsp-component-stage-test-'));try{const archive=join(root,'source.tar.gz'),output=join(root,'output');await writeFile(archive,'verified');await mkdir(output);await writeFile(join(output,'obsolete.tar.gz'),'previous');const component={id:'tool',version:'1.0.0',archiveDigest:'sha256:'+createHash('sha256').update('verified').digest('hex')};
+ await assert.rejects(stageComponents([{...component,archiveDigest:'sha256:'+'0'.repeat(64)}],new Map([['tool',archive]]),output));assert.equal(await readFile(join(output,'obsolete.tar.gz'),'utf8'),'previous');
+ await stageComponents([component],new Map([['tool',archive]]),output);assert.deepEqual((await readdir(output)).sort(),['SHA256SUMS','components.json','tool-1.0.0.tar.gz']);assert.equal(await readFile(join(output,'tool-1.0.0.tar.gz'),'utf8'),'verified');assert.match(await readFile(join(output,'SHA256SUMS'),'utf8'),/tool-1.0.0.tar.gz/);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+test('component staging rejects extra and unsafe identities before any output write',async()=>{await assert.rejects(stageComponents([{id:'../tool',version:'1',archiveDigest:'x'}],new Map([['../tool','unused']]),'unused'));await assert.rejects(stageComponents([],new Map([['extra','unused']]),'unused'));});

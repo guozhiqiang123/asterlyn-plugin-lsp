@@ -24,3 +24,5 @@ analysis-component installation flow; activation never downloads them automatica
 
 JDT needs JDK 25; Kotlin runs with JDK 17-24. Real Android project acceptance is currently macOS;
 Linux CI verifies package admission/isolated descriptor activation, not a full Android toolchain.
+
+The complete input set is verified in a staging directory before replacing generated output. Failed validation preserves the previous set; a successful stage contains only the current manifest archives and checksum metadata.
